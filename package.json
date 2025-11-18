@@ -1,0 +1,28 @@
+{
+  "name": "sqlpr",
+  "version": "1.0.0",
+  "description": "A SQL Project for lost and found items",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "SQL",
+    "NODE",
+    "JS"
+  ],
+  "author": "Ayushman Bhattacharya",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "*",
+    "cors": "*",
+    "dotenv": "^17.2.3",
+    "express": "*",
+    "jsonwebtoken": "*",
+    "mysql2": "*",
+    "nodemailer": "*"
+  }
+}

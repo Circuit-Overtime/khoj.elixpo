@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lost & Found - Recovery System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fas fa-search text-blue-600 text-2xl"></i>
+                <span class="text-xl font-bold text-gray-800">Lost & Found</span>
+            </div>
+            <div class="flex items-center space-x-4">
+                <span id="userEmail" class="text-sm text-gray-600 hidden"></span>
+                <button id="logoutBtn" class="hidden bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition">
+                    Logout
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Login Page -->
+    <div id="loginPage" class="min-h-screen bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-8">
+            <div class="text-center mb-8">
+                <i class="fas fa-search text-blue-600 text-4xl mb-4"></i>
+                <h1 class="text-3xl font-bold text-gray-800">Lost & Found</h1>
+                <p class="text-gray-600 mt-2">Find what's lost, return what's found</p>
+            </div>
+
+            <!-- Login Form -->
+            <div id="loginForm" class="space-y-4">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Login</h2>
+                <input type="email" id="loginEmail" placeholder="Email" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="password" id="loginPassword" placeholder="Password" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="loginSubmitBtn" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition font-semibold">
+                    Login
+                </button>
+                <div class="text-center">
+                    <button id="showSignupBtn" class="text-blue-600 hover:underline text-sm">
+                        Don't have an account? Sign up
+                    </button>
+                </div>
+                <div class="text-center">
+                    <button id="showForgotPasswordBtn" class="text-gray-600 hover:underline text-sm">
+                        Forgot password?
+                    </button>
+                </div>
+            </div>
+
+            <!-- Signup Form -->
+            <div id="signupForm" class="space-y-4 hidden">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Sign Up</h2>
+                <input type="text" id="signupName" placeholder="Full Name" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="email" id="signupEmail" placeholder="Email" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="password" id="signupPassword" placeholder="Password" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="password" id="signupConfirmPassword" placeholder="Confirm Password" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="signupSubmitBtn" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition font-semibold">
+                    Sign Up
+                </button>
+                <button id="showLoginBtn" class="w-full text-blue-600 hover:underline text-sm">
+                    Already have an account? Login
+                </button>
+            </div>
+
+            <!-- Forgot Password Form -->
+            <div id="forgotPasswordForm" class="space-y-4 hidden">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Reset Password</h2>
+                <p class="text-sm text-gray-600 mb-4">Enter your email to receive a 6-digit OTP code</p>
+                <input type="email" id="resetEmail" placeholder="Enter your email" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="requestOtpBtn" class="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition font-semibold">
+                    Send OTP
+                </button>
+                <div id="otpSection" class="hidden space-y-4 pt-4 border-t">
+                    <p class="text-sm text-gray-600">OTP sent! Check your email</p>
+                    <input type="text" id="otpInput" placeholder="Enter 6-digit OTP" maxlength="6" inputmode="numeric" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-2xl tracking-widest">
+                    <input type="password" id="newPassword" placeholder="New Password (min 6 characters)" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button id="resetPasswordBtn" class="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition font-semibold">
+                        Reset Password
+                    </button>
+                </div>
+                <button id="backToLoginBtn" class="w-full text-blue-600 hover:underline text-sm">
+                    Back to Login
+                </button>
+            </div>
+
+            <!-- Error/Success Message -->
+            <div id="authMessage" class="mt-6 p-3 rounded-lg hidden"></div>
+        </div>
+    </div>
+
+    <!-- Dashboard Page -->
+    <div id="dashboardPage" class="hidden">
+        <!-- Tab Navigation -->
+        <div class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex space-x-4 border-b">
+                    <button class="tab-btn active px-4 py-2 border-b-2 border-blue-600 text-blue-600 font-semibold" data-tab="browse">
+                        <i class="fas fa-list mr-2"></i>Browse Items
+                    </button>
+                    <button class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-600 hover:text-blue-600 font-semibold" data-tab="my-items">
+                        <i class="fas fa-file-lines mr-2"></i>My Items
+                    </button>
+                    <button class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-600 hover:text-blue-600 font-semibold" data-tab="add-item">
+                        <i class="fas fa-plus mr-2"></i>Add Item
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Browse Items Tab -->
+        <div id="browse-tab" class="tab-content max-w-7xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Search & Filter</h2>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <input type="text" id="searchInput" placeholder="Search items..." class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <select id="typeFilter" class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Types</option>
+                        <option value="lost">Lost Items</option>
+                        <option value="found">Found Items</option>
+                    </select>
+                    <select id="statusFilter" class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Status</option>
+                        <option value="active">Active</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="claimed">Claimed</option>
+                    </select>
+                    <button id="filterBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition font-semibold">
+                        <i class="fas fa-filter mr-2"></i>Filter
+                    </button>
+                </div>
+            </div>
+
+            <div id="itemsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Items will be loaded here -->
+            </div>
+        </div>
+
+        <!-- My Items Tab -->
+        <div id="my-items-tab" class="tab-content hidden max-w-7xl mx-auto px-4 py-8">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">My Posted Items</h2>
+            </div>
+            <div id="myItemsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- User's items will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Add Item Tab -->
+        <div id="add-item-tab" class="tab-content hidden max-w-7xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-lg shadow-md p-8 max-w-2xl">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Report Lost or Found Item</h2>
+                <form id="addItemForm" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Item Type*</label>
+                            <select id="itemType" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Select Type</option>
+                                <option value="lost">Lost Item</option>
+                                <option value="found">Found Item</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Category</label>
+                            <input type="text" id="itemCategory" placeholder="e.g., Electronics, Keys, Documents" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Item Title*</label>
+                        <input type="text" id="itemTitle" placeholder="e.g., Black iPhone 14" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                        <textarea id="itemDescription" placeholder="Detailed description of the item..." rows="4" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Location</label>
+                            <input type="text" id="itemLocation" placeholder="Where was it lost/found?" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Date</label>
+                            <input type="date" id="itemDate" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Contact Email</label>
+                            <input type="email" id="itemContactEmail" placeholder="Your email" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Contact Phone</label>
+                            <input type="tel" id="itemContactPhone" placeholder="Your phone number" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition font-semibold">
+                        <i class="fas fa-plus mr-2"></i>Post Item
+                    </button>
+                </form>
+                <div id="addItemMessage" class="mt-6 p-3 rounded-lg hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Item Detail Modal -->
+    <div id="itemModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-96 overflow-y-auto">
+            <div class="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+                <h3 id="modalTitle" class="text-xl font-bold"></h3>
+                <button class="close-modal text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+            <div id="modalContent" class="p-6 space-y-3">
+                <!-- Item details will be loaded here -->
+            </div>
+            <div class="bg-gray-50 border-t px-6 py-4 flex space-x-3">
+                <button id="editItemBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition hidden">
+                    <i class="fas fa-edit mr-2"></i>Edit
+                </button>
+                <button id="deleteItemBtn" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition hidden">
+                    <i class="fas fa-trash mr-2"></i>Delete
+                </button>
+                <button id="contactUserBtn" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">
+                    <i class="fas fa-envelope mr-2"></i>Contact
+                </button>
+                <button class="close-modal bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition ml-auto">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Item Modal -->
+    <div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-96 overflow-y-auto">
+            <div class="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+                <h3 class="text-xl font-bold">Edit Item</h3>
+                <button class="close-edit-modal text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+            <div class="p-6">
+                <form id="editItemForm" class="space-y-4">
+                    <input type="hidden" id="editItemId">
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Item Type</label>
+                            <select id="editItemType" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="lost">Lost Item</option>
+                                <option value="found">Found Item</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Category</label>
+                            <input type="text" id="editItemCategory" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Title</label>
+                        <input type="text" id="editItemTitle" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                        <textarea id="editItemDescription" rows="3" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Location</label>
+                            <input type="text" id="editItemLocation" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Status</label>
+                            <select id="editItemStatus" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="active">Active</option>
+                                <option value="resolved">Resolved</option>
+                                <option value="claimed">Claimed</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition font-semibold">
+                        Save Changes
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="hidden fixed bottom-4 right-4 p-4 rounded-lg text-white font-semibold shadow-lg z-50"></div>
+
+    <script src="scripts/client.js"></script>
+</body>
+</html>
