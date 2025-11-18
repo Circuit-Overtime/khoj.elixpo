@@ -20,8 +20,8 @@ app.use(cors({
 const JWT_SECRET = process.env.JWT_SECRET;
 const db = await mysql.createConnection({
   host: "localhost",
-  user: "elixpo",
-  password: "elixpo",
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
   database: "items",
 });
 let mail_pass = process.env.MAIL_PASS
