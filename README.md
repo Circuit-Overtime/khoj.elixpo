@@ -5,8 +5,8 @@
 
 ```mermaid
 erDiagram
-    USERS ||--o{ OTP_VERIFICATIONS : "has"}
-    USERS ||--o{ ITEMS : "creates"}
+    USERS ||--o{ OTP_VERIFICATIONS : "has" 
+    USERS ||--o{ ITEMS : "creates" 
 
     USERS {
         int id PK
