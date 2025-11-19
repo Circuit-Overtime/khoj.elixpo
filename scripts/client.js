@@ -6,7 +6,6 @@ let otpTimerInterval = null;
 let currentOtpEmail = '';
 let currentOtpIsSignup = false;
 
-// ============== DOM Elements ==============
 const loginPage = document.getElementById('loginPage');
 const dashboardPage = document.getElementById('dashboardPage');
 const loginForm = document.getElementById('loginForm');
@@ -14,7 +13,6 @@ const signupForm = document.getElementById('signupForm');
 const otpVerificationForm = document.getElementById('otpVerificationForm');
 const otpSignupVerificationForm = document.getElementById('otpSignupVerificationForm');
 
-// ============== Initial Load ==============
 document.addEventListener('DOMContentLoaded', () => {
     if (currentToken) {
         showDashboard();
@@ -24,7 +22,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeOtpInputs();
 });
 
-// ============== OTP Input Handler ==============
 function initializeOtpInputs() {
     const loginOtpInputs = document.querySelectorAll('#otpInputs .otp-digit');
     loginOtpInputs.forEach((input, index) => {
@@ -65,7 +62,6 @@ function clearOtpInputs(selector) {
     inputs[0].focus();
 }
 
-// ============== OTP Timer ==============
 function startOtpTimer(timerElementId, duration = 300) {
     let timeLeft = duration;
     const timerElement = document.getElementById(timerElementId);
@@ -85,7 +81,6 @@ function startOtpTimer(timerElementId, duration = 300) {
     }, 1000);
 }
 
-// ============== Auth Functions ==============
 function showAuthMessage(message, isError = false) {
     const messageDiv = document.getElementById('authMessage');
     messageDiv.textContent = message;
@@ -109,7 +104,7 @@ function showDashboard() {
     document.getElementById('userEmail').textContent = currentUser.email;
     document.getElementById('userEmail').classList.remove('hidden');
     document.getElementById('logoutBtn').classList.remove('hidden');
-    document.getElementById('pointsContainer').classList.remove('hidden');  // Show points
+    document.getElementById('pointsContainer').classList.remove('hidden');
     loadBrowseItems();
     loadUserPoints();
 }
@@ -119,7 +114,7 @@ function hideDashboard() {
     dashboardPage.classList.add('hidden');
     document.getElementById('userEmail').classList.add('hidden');
     document.getElementById('logoutBtn').classList.add('hidden');
-    document.getElementById('pointsContainer').classList.add('hidden');  // Hide points
+    document.getElementById('pointsContainer').classList.add('hidden');
     currentToken = null;
     currentUser = {};
     localStorage.removeItem('token');
@@ -127,13 +122,10 @@ function hideDashboard() {
     localStorage.removeItem('rememberMe');
     localStorage.removeItem('signupName');
     localStorage.removeItem('signupRememberMe');
-    
-    // Reset all forms to login state
     showLoginPage();
     document.getElementById('loginForm').reset();
 }
 
-// ============== Google Sign-In ==============
 document.getElementById('googleSignInBtn')?.addEventListener('click', async () => {
     try {
         showAuthMessage('Opening Google Sign-In...', false);
@@ -194,7 +186,6 @@ document.getElementById('googleSignInBtn')?.addEventListener('click', async () =
     }
 });
 
-// Listen for messages from Google auth popup
 window.addEventListener('message', (event) => {
     if (event.origin !== window.location.origin) return;
     
@@ -209,7 +200,6 @@ window.addEventListener('message', (event) => {
     }
 });
 
-
 document.getElementById('loginSubmitBtn').addEventListener('click', async () => {
     const email = document.getElementById('loginEmail').value;
     const rememberMe = document.getElementById('rememberMe').checked;
@@ -220,7 +210,6 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
     }
 
     try {
-        // First check if email exists
         const checkRes = await fetch(`${API_BASE}/auth/check-email`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -246,7 +235,6 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
             );
         }
 
-        // Send OTP - now with additional check
         const res = await fetch(`${API_BASE}/auth/send-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -255,7 +243,6 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
 
         const data = await res.json();
         if (!res.ok) {
-            // Check if it's the Google login error
             if (data.message.includes('Google Sign-In')) {
                 showAuthMessage(data.message, true);
                 document.getElementById('loginEmail').value = '';
@@ -283,7 +270,6 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
     }
 });
 
-// ============== Email Login - Verify OTP ==============
 document.getElementById('verifyOtpBtn')?.addEventListener('click', async () => {
     const otp = getOtpValue('#otpInputs .otp-digit');
     const rememberMe = localStorage.getItem('rememberMe') === 'true';
@@ -330,7 +316,6 @@ document.getElementById('verifyOtpBtn')?.addEventListener('click', async () => {
     }
 });
 
-// ============== Email Signup - Send OTP ==============
 document.getElementById('signupSubmitBtn')?.addEventListener('click', async () => {
     const name = document.getElementById('signupName').value;
     const email = document.getElementById('signupEmail').value;
@@ -371,7 +356,6 @@ document.getElementById('signupSubmitBtn')?.addEventListener('click', async () =
     }
 });
 
-// ============== Email Signup - Verify OTP ==============
 document.getElementById('verifyOtpSignupBtn')?.addEventListener('click', async () => {
     const otp = getOtpValue('#otpSignupInputs .otp-digit-signup');
     const name = localStorage.getItem('signupName');
@@ -413,7 +397,6 @@ document.getElementById('verifyOtpSignupBtn')?.addEventListener('click', async (
     }
 });
 
-// ============== OTP Resend ==============
 document.getElementById('resendOtpBtn')?.addEventListener('click', async () => {
     try {
         const res = await fetch(`${API_BASE}/auth/send-otp`, {
@@ -458,7 +441,6 @@ document.getElementById('resendOtpSignupBtn')?.addEventListener('click', async (
     }
 });
 
-// ============== Form Navigation ==============
 document.getElementById('showSignupBtn')?.addEventListener('click', () => {
     loginForm.classList.add('hidden');
     signupForm.classList.remove('hidden');
@@ -483,12 +465,9 @@ document.getElementById('backToSignupBtn')?.addEventListener('click', () => {
     if (otpTimerInterval) clearInterval(otpTimerInterval);
 });
 
-// ============== Logout ==============
 document.getElementById('logoutBtn')?.addEventListener('click', () => {
     hideDashboard();
 });
-
-// ============== Dashboard Functions ==============
 
 function loadBrowseItems() {
     try {
@@ -531,7 +510,6 @@ async function loadUserPoints() {
         const data = await res.json();
         const pointsDisplay = document.getElementById('userPoints');
         pointsDisplay.textContent = `${data.points} pts`;
-        // Container is already visible from showDashboard()
     } catch (error) {
         console.error('Error loading points:', error);
     }
@@ -1119,7 +1097,6 @@ document.getElementById('claimFoundForm')?.addEventListener('submit', async (e) 
     }
 });
 
-// Tab Navigation
 document.querySelectorAll('.tab-btn')?.forEach(btn => {
     btn.addEventListener('click', () => {
         const tabName = btn.dataset.tab;

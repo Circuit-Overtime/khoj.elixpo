@@ -1,6 +1,5 @@
 USE items;
 
--- Users table with authentication
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   email VARCHAR(255) UNIQUE NOT NULL,
@@ -14,7 +13,6 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- OTP verification table
 CREATE TABLE IF NOT EXISTS otp_verifications (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT,
@@ -29,7 +27,6 @@ CREATE TABLE IF NOT EXISTS otp_verifications (
   INDEX idx_otp (otp)
 );
 
--- Lost and Found items table
 CREATE TABLE IF NOT EXISTS items (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
@@ -54,7 +51,6 @@ CREATE TABLE IF NOT EXISTS items (
   INDEX idx_items_status (status)
 );
 
--- Found item claims table - tracks when users claim to have found lost items
 CREATE TABLE IF NOT EXISTS found_claims (
   id INT AUTO_INCREMENT PRIMARY KEY,
   original_item_id INT NOT NULL,
@@ -73,20 +69,16 @@ CREATE TABLE IF NOT EXISTS found_claims (
   INDEX idx_status (status)
 );
 
--- Add foreign keys to items table for resolved tracking (after found_claims is created)
 ALTER TABLE items ADD CONSTRAINT fk_resolved_by 
   FOREIGN KEY (resolved_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
 
 ALTER TABLE items ADD CONSTRAINT fk_accepted_claim 
   FOREIGN KEY (accepted_claim_id) REFERENCES found_claims(id) ON DELETE SET NULL;
 
--- Create index for resolved items
 CREATE INDEX IF NOT EXISTS idx_items_resolved_at ON items(resolved_at);
 CREATE INDEX IF NOT EXISTS idx_items_resolved_by ON items(resolved_by_user_id);
 
--- Ensure login_type column exists and has proper values
 ALTER TABLE users MODIFY COLUMN login_type ENUM('email', 'google') DEFAULT 'email';
 
--- Add index for faster lookups
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_login_type ON users(login_type);
