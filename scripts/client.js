@@ -1,4 +1,4 @@
-const API_BASE = 'http://172.31.110.79:3000/api';
+const API_BASE = 'http://localhost:3000/api';
 let currentToken = localStorage.getItem('token');
 let currentUser = JSON.parse(localStorage.getItem('user') || '{}');
 let currentEditingItem = null;

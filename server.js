@@ -32,8 +32,10 @@ const db = await mysql.createConnection({
   password: process.env.DB_PASSWORD,
   database: "items",
 });
+
 let mail_pass = process.env.MAIL_PASS
 let mail_user = process.env.MAIL_USER
+
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
   port: 587,
@@ -45,15 +47,15 @@ const transporter = nodemailer.createTransport({
   connectionTimeout: 5000,
   socketTimeout: 5000
 });
+
 transporter.verify((error, success) => {
   if (error) {
     console.error("❌ Email service error:", error.message);
-    console.error("Error code:", error.code);
   } else {
     console.log("✓ Email service ready");
   }
 });
-console.log(mail_pass, mail_user, JWT_SECRET)
+
 const verifyToken = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) {
@@ -67,12 +69,35 @@ const verifyToken = (req, res, next) => {
     return res.status(401).json({ message: "Invalid token" });
   }
 };
+
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-// IMPORTANT: Define API routes FIRST, before static files
-// ========== PASSWORDLESS AUTH ROUTES ==========
+// ========== INITIALIZE FIREBASE ADMIN SDK ==========
+const serviceAccountPath = path.join(__dirname, "service.json");
+if (fs.existsSync(serviceAccountPath)) {
+  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+  console.log("✓ Firebase Admin SDK initialized");
+} else {
+  console.warn("⚠ service.json not found. Google login disabled.");
+}
+
+// ========== INITIALIZE GOOGLE OAUTH2 ==========
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google-callback`
+);
+
+const oauthSessions = new Map();
+
+// ========== ALL API ROUTES (MUST BE BEFORE STATIC FILES) ==========
+
+// ========== AUTH ROUTES ==========
 
 // Send OTP for Email Login/Signup
 app.post("/api/auth/send-otp", async (req, res) => {
@@ -83,17 +108,12 @@ app.post("/api/auth/send-otp", async (req, res) => {
     }
 
     const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-    // Check if user exists
     const [existingUser] = await db.query("SELECT id FROM users WHERE email = ?", [email]);
 
     if (isSignup && existingUser.length > 0) {
       return res.status(400).json({ message: "Email already registered" });
-    }
-
-    if (!isSignup && existingUser.length === 0) {
-      return res.status(404).json({ message: "Email not registered" });
     }
 
     // Store OTP in database
@@ -143,14 +163,12 @@ app.post("/api/auth/check-email", async (req, res) => {
     );
 
     if (users.length === 0) {
-      // Email doesn't exist
       return res.json({
         exists: false,
         message: "Email not registered"
       });
     }
 
-    // Email exists
     res.json({
       exists: true,
       login_type: users[0].login_type,
@@ -171,7 +189,6 @@ app.post("/api/auth/verify-otp", async (req, res) => {
       return res.status(400).json({ message: "Email and OTP required" });
     }
 
-    // Verify OTP
     const [otpRecords] = await db.query(
       "SELECT id FROM otp_verifications WHERE email = ? AND otp = ? AND used = FALSE AND expires_at > NOW() AND purpose = 'login'",
       [email, otp]
@@ -181,32 +198,26 @@ app.post("/api/auth/verify-otp", async (req, res) => {
       return res.status(401).json({ message: "Invalid or expired OTP" });
     }
 
-    // Mark OTP as used
     await db.query("UPDATE otp_verifications SET used = TRUE WHERE id = ?", [otpRecords[0].id]);
 
     let user;
     let isNewUser = false;
 
-    // Check if user exists
     const [existingUsers] = await db.query(
       "SELECT id, email, name, login_type FROM users WHERE email = ?",
       [email]
     );
 
     if (existingUsers.length > 0) {
-      // User exists
       user = existingUsers[0];
       
-      // If user registered via Google, don't allow email OTP login
       if (user.login_type === 'google') {
         return res.status(400).json({ 
           message: "This email is registered with Google Sign-In. Please use Google login instead." 
         });
       }
     } else {
-      // User doesn't exist - auto register if coming from email login (not signup form)
       if (isAutoRegister || !isSignup) {
-        // Auto-register user with generated name from email
         const namePart = email.split('@')[0];
         const autoName = name || namePart.charAt(0).toUpperCase() + namePart.slice(1);
         
@@ -222,7 +233,6 @@ app.post("/api/auth/verify-otp", async (req, res) => {
         user = newUser[0];
         isNewUser = true;
       } else if (isSignup) {
-        // Signup form requires name
         if (!name) {
           return res.status(400).json({ message: "Name required for signup" });
         }
@@ -243,13 +253,11 @@ app.post("/api/auth/verify-otp", async (req, res) => {
       }
     }
 
-    // Create JWT with expiry based on rememberMe
     const expiresIn = rememberMe ? "30d" : "15d";
     const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
       expiresIn,
     });
 
-    // Set httpOnly cookie
     const maxAge = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 15 * 24 * 60 * 60 * 1000;
     res.cookie("token", token, {
       httpOnly: true,
@@ -270,231 +278,172 @@ app.post("/api/auth/verify-otp", async (req, res) => {
   }
 });
 
-// Initialize Firebase Admin SDK
-const serviceAccountPath = path.join(__dirname, "service.json");
-if (fs.existsSync(serviceAccountPath)) {
-  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
-  console.log("✓ Firebase Admin SDK initialized");
-} else {
-  console.warn("⚠ serviceAccountKey.json not found. Google login disabled.");
-}
-
-// Google Login - Verify ID Token from Frontend
-app.post("/api/auth/google-login", async (req, res) => {
+// Generate Google Auth URL
+app.post("/api/auth/google-url", async (req, res) => {
   try {
-    const { idToken, rememberMe } = req.body;
+    const state = crypto.randomBytes(32).toString('hex');
+    const sessionId = crypto.randomBytes(16).toString('hex');
+    
+    oauthSessions.set(sessionId, {
+      state,
+      createdAt: Date.now()
+    });
 
-    if (!idToken) {
-      return res.status(400).json({ message: "ID token required" });
+    const scopes = [
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile'
+    ];
+
+    const authUrl = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: scopes,
+      state: state,
+      include_granted_scopes: true,
+      prompt: 'consent'
+    });
+
+    oauthSessions.set(state, {
+      sessionId,
+      createdAt: Date.now()
+    });
+
+    res.json({ authUrl, sessionId });
+  } catch (error) {
+    console.error('Google URL generation error:', error);
+    res.status(500).json({ message: 'Failed to generate Google auth URL' });
+  }
+});
+
+// Google Callback Handler
+app.get("/api/auth/google-callback", async (req, res) => {
+  try {
+    const { code, state } = req.query;
+
+    if (!code || !state) {
+      return res.status(400).send('<h1>Missing auth code or state</h1>');
     }
 
-    // Verify the ID token with Firebase Admin SDK
-    let decodedToken;
-    try {
-      decodedToken = await admin.auth().verifyIdToken(idToken);
-    } catch (error) {
-      console.error("Token verification error:", error.message);
-      return res.status(401).json({ message: "Invalid or expired token" });
+    if (!oauthSessions.has(state)) {
+      return res.status(400).send('<h1>Invalid state parameter</h1>');
     }
 
-    const { email, name, uid } = decodedToken;
+    const session = oauthSessions.get(state);
+    if (Date.now() - session.createdAt > 5 * 60 * 1000) {
+      oauthSessions.delete(state);
+      return res.status(400).send('<h1>Auth request expired</h1>');
+    }
 
-    // Check if user exists
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
+
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const userInfo = await oauth2.userinfo.get();
+    const { email, name, id: googleId } = userInfo.data;
+
+    if (!email) {
+      oauthSessions.delete(state);
+      return res.status(400).send('<h1>Could not retrieve email from Google</h1>');
+    }
+
     const [existingUser] = await db.query(
-      "SELECT id, email, name FROM users WHERE email = ? OR firebase_uid = ?",
-      [email, uid]
+      "SELECT id, email, name FROM users WHERE email = ? OR google_id = ?",
+      [email, googleId]
     );
 
     let user;
 
     if (existingUser.length > 0) {
-      // Update firebase_uid if not set
       user = existingUser[0];
-      if (!user.firebase_uid) {
-        await db.query("UPDATE users SET firebase_uid = ? WHERE id = ?", [uid, user.id]);
+      // Update google_id if not set
+      if (!user.google_id) {
+        await db.query("UPDATE users SET google_id = ?, login_type = 'google' WHERE id = ?", [
+          googleId,
+          user.id
+        ]);
       }
     } else {
       // Create new user
       await db.query(
-        "INSERT INTO users (email, name, firebase_uid, google_id, login_type) VALUES (?, ?, ?, ?, 'google')",
-        [email, name || email, uid, uid]
+        "INSERT INTO users (email, name, google_id, login_type) VALUES (?, ?, ?, 'google')",
+        [email, name || email, googleId]
       );
 
       const [newUser] = await db.query("SELECT id, email, name FROM users WHERE email = ?", [email]);
       user = newUser[0];
     }
 
-    // Create JWT with 30-day expiry for Google login
     const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
-      expiresIn: "30d",
+      expiresIn: "30d"
     });
 
-    // Set httpOnly cookie with 30-day maxAge
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-    });
+    oauthSessions.delete(state);
 
-    res.json({
-      message: "Google login successful",
-      token,
-      user: { id: user.id, email: user.email, name: user.name },
-    });
+    res.send(`
+      <html>
+        <head>
+          <title>Google Sign-In</title>
+          <script>
+            // Store token in localStorage
+            localStorage.setItem('token', '${token}');
+            localStorage.setItem('user', '${JSON.stringify(user).replace(/'/g, "\\'")}');
+            
+            // Notify parent window
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'GOOGLE_AUTH_SUCCESS',
+                token: '${token}',
+                user: ${JSON.stringify(user)}
+              }, window.location.origin);
+            }
+            
+            // Close popup
+            window.close();
+          </script>
+        </head>
+        <body>
+          <p>Authentication successful. Closing...</p>
+        </body>
+      </html>
+    `);
+
   } catch (error) {
-    console.error("Google login error:", error);
-    res.status(500).json({ message: "Server error" });
+    console.error('Google callback error:', error);
+    oauthSessions.delete(req.query.state);
+    res.status(500).send('<h1>Authentication failed. Please try again.</h1>');
   }
 });
 
-// ========== OLD AUTH ROUTES (DEPRECATED - Keeping for backward compatibility) ==========
-app.post("/api/auth/signup", async (req, res) => {
+// Check Google Auth Status
+app.get("/api/auth/google-status", async (req, res) => {
   try {
-    const { email, password, name } = req.body;
-    if (!email || !password || !name) {
-      return res.status(400).json({ message: "All fields are required" });
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ authenticated: false });
     }
-    const [existingUser] = await db.query(
-      "SELECT id FROM users WHERE email = ?",
-      [email]
-    );
-    if (existingUser.length > 0) {
-      return res.status(400).json({ message: "Email already registered" });
-    }
-    const hashedPassword = await bcrypt.hash(password, 10);
-    await db.query("INSERT INTO users (email, password, name) VALUES (?, ?, ?)", [
-      email,
-      hashedPassword,
-      name,
-    ]);
-    res.status(201).json({ message: "User registered successfully" });
-  } catch (error) {
-    console.error("Signup error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password required" });
-    }
-    const [users] = await db.query("SELECT id, email, password, name FROM users WHERE email = ?", [
-      email,
-    ]);
-    if (users.length === 0) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-    const user = users[0];
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
-      expiresIn: "7d",
-    });
-    res.json({
-      message: "Login successful",
-      token,
-      user: { id: user.id, email: user.email, name: user.name },
-    });
-  } catch (error) {
-    console.error("Login error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-app.post("/api/auth/password", async (req, res) => {
-  try {
-    const { email } = req.body;
-    console.log("Forgot password request for:", email);
-    if (!email) {
-      return res.status(400).json({ message: "Email is required" });
-    }
-    const [users] = await db.query("SELECT id FROM users WHERE email = ?", [email]);
-    if (users.length === 0) {
-      return res.status(404).json({ message: "User not found" });
-    }
-    const user = users[0];
-    const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-    await db.query(
-      "DELETE FROM otp_verifications WHERE user_id = ? AND purpose = 'password_reset'",
-      [user.id]
-    );
-    await db.query(
-      "INSERT INTO otp_verifications (user_id, otp, purpose, expires_at) VALUES (?, ?, 'password_reset', ?)",
-      [user.id, otp, expiresAt]
-    );
+
     try {
-      await transporter.sendMail({
-        from: mail_user,
-        to: email,
-        subject: "🔐 Your Password Reset OTP",
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #333;">Password Reset Request</h2>
-            <p>We received a request to reset your password. Use this OTP to proceed:</p>
-            <div style="background-color: #f0f0f0; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
-              <h1 style="color: #2563eb; letter-spacing: 2px;">${otp}</h1>
-            </div>
-            <p style="color: #666;">This OTP will expire in 10 minutes.</p>
-            <p style="color: #999; font-size: 12px;">If you didn't request this, please ignore this email.</p>
-          </div>
-        `
+      const decoded = jwt.verify(token, JWT_SECRET);
+      const [user] = await db.query("SELECT id, email, name FROM users WHERE id = ?", [decoded.id]);
+      
+      if (user.length === 0) {
+        return res.status(401).json({ authenticated: false });
+      }
+
+      res.json({
+        authenticated: true,
+        token,
+        user: user[0]
       });
-      console.log("✓ OTP sent to:", email);
-    } catch (emailError) {
-      console.error("❌ Email sending error:", emailError.message);
-      return res.status(500).json({ message: "Failed to send OTP email" });
+    } catch (error) {
+      res.status(401).json({ authenticated: false });
     }
-    res.json({ message: "OTP sent to your email" });
   } catch (error) {
-    console.error("Forgot password error:", error);
-    res.status(500).json({ message: "Server error" });
+    console.error('Google status check error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
-app.post("/api/auth/reset-password", async (req, res) => {
-  try {
-    const { email, otp, newPassword } = req.body;
-    if (!email || !otp || !newPassword) {
-      return res.status(400).json({ message: "All fields are required" });
-    }
-    if (otp.length !== 6 || isNaN(otp)) {
-      return res.status(400).json({ message: "Invalid OTP format" });
-    }
-    const [users] = await db.query("SELECT id FROM users WHERE email = ?", [email]);
-    if (users.length === 0) {
-      return res.status(404).json({ message: "User not found" });
-    }
-    const user = users[0];
-    const [otpRecords] = await db.query(
-      "SELECT id FROM otp_verifications WHERE user_id = ? AND otp = ? AND used = FALSE AND expires_at > NOW() AND purpose = 'password_reset'",
-      [user.id, otp]
-    );
-    if (otpRecords.length === 0) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
-    }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters" });
-    }
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await db.query("UPDATE users SET password = ? WHERE id = ?", [
-      hashedPassword,
-      user.id,
-    ]);
-    await db.query("UPDATE otp_verifications SET used = TRUE WHERE id = ?", [
-      otpRecords[0].id,
-    ]);
-    res.json({ message: "Password reset successfully. Please login with your new password." });
-  } catch (error) {
-    console.error("Reset password error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
+
+// ========== ITEMS ROUTES ==========
 app.get("/api/items", async (req, res) => {
   try {
     const { type, status, search } = req.query;
@@ -525,6 +474,7 @@ app.get("/api/items", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 app.get("/api/items/user", verifyToken, async (req, res) => {
   try {
     const [items] = await db.query(
@@ -542,6 +492,7 @@ app.get("/api/items/user", verifyToken, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 app.get("/api/items/:id", async (req, res) => {
   try {
     const [items] = await db.query(
@@ -562,6 +513,7 @@ app.get("/api/items/:id", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 app.post("/api/items", verifyToken, async (req, res) => {
   try {
     const {
@@ -597,6 +549,7 @@ app.post("/api/items", verifyToken, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 app.put("/api/items/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -639,6 +592,7 @@ app.put("/api/items/:id", verifyToken, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 app.delete("/api/items/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -657,7 +611,6 @@ app.delete("/api/items/:id", verifyToken, async (req, res) => {
   }
 });
 
-// Mark Lost Item as Found
 app.put("/api/items/:id/mark-found", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -679,7 +632,6 @@ app.put("/api/items/:id/mark-found", verifyToken, async (req, res) => {
   }
 });
 
-// Mark Found Item as Claimed
 app.put("/api/items/:id/mark-claimed", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -701,7 +653,7 @@ app.put("/api/items/:id/mark-claimed", verifyToken, async (req, res) => {
   }
 });
 
-// Create a Found Claim for a Lost Item
+// ========== FOUND CLAIMS ROUTES ==========
 app.post("/api/found-claims", verifyToken, async (req, res) => {
   try {
     const { original_item_id, description, location, contact_email, contact_phone } = req.body;
@@ -731,7 +683,6 @@ app.post("/api/found-claims", verifyToken, async (req, res) => {
   }
 });
 
-// Get Found Claims for a Lost Item
 app.get("/api/found-claims/item/:itemId", async (req, res) => {
   try {
     const { itemId } = req.params;
@@ -753,7 +704,6 @@ app.get("/api/found-claims/item/:itemId", async (req, res) => {
   }
 });
 
-// Get User's Found Claims
 app.get("/api/found-claims/user", verifyToken, async (req, res) => {
   try {
     const [claims] = await db.query(
@@ -773,7 +723,6 @@ app.get("/api/found-claims/user", verifyToken, async (req, res) => {
   }
 });
 
-// Accept a Found Claim and Award Points
 app.put("/api/found-claims/:claimId/accept", verifyToken, async (req, res) => {
   try {
     const { claimId } = req.params;
@@ -796,14 +745,11 @@ app.put("/api/found-claims/:claimId/accept", verifyToken, async (req, res) => {
       return res.status(403).json({ message: "Unauthorized" });
     }
     
-    // Award 10 points to the user who found the item
     const claimedByUserId = claims[0].claimed_by_user_id;
     await db.query("UPDATE users SET points = points + 10 WHERE id = ?", [claimedByUserId]);
     
-    // Update claim status
     await db.query("UPDATE found_claims SET status = 'accepted' WHERE id = ?", [claimId]);
     
-    // Update item status to resolved with resolver info
     await db.query(
       "UPDATE items SET status = 'resolved', resolved_by_user_id = ?, accepted_claim_id = ?, resolved_at = NOW() WHERE id = ?",
       [req.userId, claimId, claims[0].original_item_id]
@@ -816,7 +762,6 @@ app.put("/api/found-claims/:claimId/accept", verifyToken, async (req, res) => {
   }
 });
 
-// Reject a Found Claim
 app.put("/api/found-claims/:claimId/reject", verifyToken, async (req, res) => {
   try {
     const { claimId } = req.params;
@@ -848,7 +793,7 @@ app.put("/api/found-claims/:claimId/reject", verifyToken, async (req, res) => {
   }
 });
 
-// Get User Points
+// ========== USER ROUTES ==========
 app.get("/api/users/points", verifyToken, async (req, res) => {
   try {
     const [users] = await db.query("SELECT points FROM users WHERE id = ?", [req.userId]);
@@ -864,7 +809,6 @@ app.get("/api/users/points", verifyToken, async (req, res) => {
   }
 });
 
-
 app.get("/api/debug", (req, res) => {
   res.json({ 
     message: "Server is running", 
@@ -873,203 +817,15 @@ app.get("/api/debug", (req, res) => {
   });
 });
 
-// THEN serve static files (this must be AFTER all API routes)
+// ========== STATIC FILES (MUST BE LAST) ==========
 app.use(express.static(__dirname));
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-
+// ========== START SERVER ==========
 app.listen(3000, "0.0.0.0", () => {
   console.log("✓ API running on port 3000");
   console.log("✓ Access at http://localhost:3000");
-});
-
-// Google OAuth2 Client Configuration
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google-callback`
-);
-
-// Store OAuth state for verification
-const oauthSessions = new Map();
-
-// Generate Google Auth URL
-app.post("/api/auth/google-url", async (req, res) => {
-  try {
-    const state = crypto.randomBytes(32).toString('hex');
-    const sessionId = crypto.randomBytes(16).toString('hex');
-    
-    // Store session
-    oauthSessions.set(sessionId, {
-      state,
-      createdAt: Date.now()
-    });
-
-    const scopes = [
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile'
-    ];
-
-    const authUrl = oauth2Client.generateAuthUrl({
-      access_type: 'offline',
-      scope: scopes,
-      state: state,
-      include_granted_scopes: true,
-      prompt: 'consent'
-    });
-
-    // Store state in session for callback verification
-    oauthSessions.set(state, {
-      sessionId,
-      createdAt: Date.now()
-    });
-
-    res.json({ authUrl, sessionId });
-  } catch (error) {
-    console.error('Google URL generation error:', error);
-    res.status(500).json({ message: 'Failed to generate Google auth URL' });
-  }
-});
-
-// Google Callback Handler
-app.get("/api/auth/google-callback", async (req, res) => {
-  try {
-    const { code, state } = req.query;
-
-    if (!code || !state) {
-      return res.status(400).send('<h1>Missing auth code or state</h1>');
-    }
-
-    // Verify state
-    if (!oauthSessions.has(state)) {
-      return res.status(400).send('<h1>Invalid state parameter</h1>');
-    }
-
-    // Check if state is not too old (5 minutes)
-    const session = oauthSessions.get(state);
-    if (Date.now() - session.createdAt > 5 * 60 * 1000) {
-      oauthSessions.delete(state);
-      return res.status(400).send('<h1>Auth request expired</h1>');
-    }
-
-    // Exchange code for tokens
-    const { tokens } = await oauth2Client.getToken(code);
-    oauth2Client.setCredentials(tokens);
-
-    // Get user info from Google
-    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
-    const userInfo = await oauth2.userinfo.get();
-    const { email, name, id: googleId } = userInfo.data;
-
-    if (!email) {
-      oauthSessions.delete(state);
-      return res.status(400).send('<h1>Could not retrieve email from Google</h1>');
-    }
-
-    // Check or create user in database
-    const [existingUser] = await db.query(
-      "SELECT id, email, name FROM users WHERE email = ? OR google_id = ?",
-      [email, googleId]
-    );
-
-    let user;
-
-    if (existingUser.length > 0) {
-      user = existingUser[0];
-      // Update google_id if not set
-      if (!user.google_id) {
-        await db.query("UPDATE users SET google_id = ?, login_type = 'google' WHERE id = ?", [
-          googleId,
-          user.id
-        ]);
-      }
-    } else {
-      // Create new user
-      await db.query(
-        "INSERT INTO users (email, name, google_id, login_type) VALUES (?, ?, ?, 'google')",
-        [email, name || email, googleId]
-      );
-
-      const [newUser] = await db.query("SELECT id, email, name FROM users WHERE email = ?", [email]);
-      user = newUser[0];
-    }
-
-    // Create JWT token (30 days for Google login)
-    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
-      expiresIn: "30d"
-    });
-
-    // Clean up old session
-    oauthSessions.delete(state);
-
-    // Return HTML that closes popup and stores token
-    res.send(`
-      <html>
-        <head>
-          <title>Google Sign-In</title>
-          <script>
-            // Store token in localStorage
-            localStorage.setItem('token', '${token}');
-            localStorage.setItem('user', '${JSON.stringify(user).replace(/'/g, "\\'")}');
-            
-            // Notify parent window
-            if (window.opener) {
-              window.opener.postMessage({
-                type: 'GOOGLE_AUTH_SUCCESS',
-                token: '${token}',
-                user: ${JSON.stringify(user)}
-              }, window.location.origin);
-            }
-            
-            // Close popup
-            window.close();
-          </script>
-        </head>
-        <body>
-          <p>Authentication successful. Closing...</p>
-        </body>
-      </html>
-    `);
-
-  } catch (error) {
-    console.error('Google callback error:', error);
-    oauthSessions.delete(req.query.state);
-    res.status(500).send('<h1>Authentication failed. Please try again.</h1>');
-  }
-});
-
-// Check Google Auth Status (called after popup closes)
-app.get("/api/auth/google-status", async (req, res) => {
-  try {
-    // In a real scenario, you'd check if the user is authenticated via the JWT
-    // For now, we'll return success if they have a valid token
-    
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) {
-      return res.status(401).json({ authenticated: false });
-    }
-
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      const [user] = await db.query("SELECT id, email, name FROM users WHERE id = ?", [decoded.id]);
-      
-      if (user.length === 0) {
-        return res.status(401).json({ authenticated: false });
-      }
-
-      res.json({
-        authenticated: true,
-        token,
-        user: user[0]
-      });
-    } catch (error) {
-      res.status(401).json({ authenticated: false });
-    }
-  } catch (error) {
-    console.error('Google status check error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
 });
