@@ -216,7 +216,7 @@ app.get("/api/items", async (req, res) => {
                  LEFT JOIN users u ON i.resolved_by_user_id = u.id
                  LEFT JOIN found_claims fc ON i.accepted_claim_id = fc.id
                  LEFT JOIN users cu ON fc.claimed_by_user_id = cu.id
-                 WHERE 1=1`;
+                 WHERE i.status != 'resolved'`;
     let params = [];
     if (type) {
       query += " AND i.item_type = ?";

@@ -307,15 +307,35 @@ function displayItems(items, containerId, isUserItems = false) {
     items.forEach(item => {
         const card = document.createElement('div');
         card.className = 'bg-white rounded-lg shadow-md hover:shadow-lg transition overflow-hidden cursor-pointer';
+        
+        // Determine card color based on status first, then item type
+        let bgColor = '';
+        let icon = '';
+        let statusDisplay = '';
+        
+        if (item.status === 'resolved') {
+            bgColor = 'from-green-400 to-green-600';
+            icon = 'fa-check-circle';
+            statusDisplay = 'RESOLVED';
+        } else if (item.item_type === 'lost') {
+            bgColor = 'from-red-400 to-red-600';
+            icon = 'fa-question-circle';
+            statusDisplay = item.status.toUpperCase();
+        } else {
+            bgColor = 'from-blue-400 to-blue-600';
+            icon = 'fa-check-circle';
+            statusDisplay = item.status.toUpperCase();
+        }
+        
         card.innerHTML = `
-            <div class="bg-gradient-to-r ${item.item_type === 'lost' ? 'from-red-400 to-red-600' : 'from-green-400 to-green-600'} h-32 flex items-center justify-center">
-                <i class="fas ${item.item_type === 'lost' ? 'fa-question-circle' : 'fa-check-circle'} text-white text-4xl"></i>
+            <div class="bg-gradient-to-r ${bgColor} h-32 flex items-center justify-center">
+                <i class="fas ${icon} text-white text-4xl"></i>
             </div>
             <div class="p-4">
                 <div class="flex justify-between items-start mb-2">
                     <h3 class="font-bold text-lg text-gray-800">${item.title}</h3>
-                    <span class="text-xs font-semibold ${item.item_type === 'lost' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'} px-2 py-1 rounded">
-                        ${item.item_type.toUpperCase()}
+                    <span class="text-xs font-semibold ${item.status === 'resolved' ? 'bg-green-100 text-green-800' : item.item_type === 'lost' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'} px-2 py-1 rounded">
+                        ${statusDisplay}
                     </span>
                 </div>
                 <p class="text-sm text-gray-600 mb-2 line-clamp-2">${item.description || 'No description'}</p>
