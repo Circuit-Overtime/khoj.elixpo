@@ -109,6 +109,7 @@ function showDashboard() {
     document.getElementById('userEmail').textContent = currentUser.email;
     document.getElementById('userEmail').classList.remove('hidden');
     document.getElementById('logoutBtn').classList.remove('hidden');
+    document.getElementById('pointsContainer').classList.remove('hidden');  // Show points
     loadBrowseItems();
     loadUserPoints();
 }
@@ -118,6 +119,7 @@ function hideDashboard() {
     dashboardPage.classList.add('hidden');
     document.getElementById('userEmail').classList.add('hidden');
     document.getElementById('logoutBtn').classList.add('hidden');
+    document.getElementById('pointsContainer').classList.add('hidden');  // Hide points
     currentToken = null;
     currentUser = {};
     localStorage.removeItem('token');
@@ -521,7 +523,7 @@ async function loadUserPoints() {
         const data = await res.json();
         const pointsDisplay = document.getElementById('userPoints');
         pointsDisplay.textContent = `${data.points} pts`;
-        pointsDisplay.classList.remove('hidden');
+        // Container is already visible from showDashboard()
     } catch (error) {
         console.error('Error loading points:', error);
     }

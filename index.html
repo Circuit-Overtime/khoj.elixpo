@@ -12,23 +12,23 @@
 <body class="bg-gray-50">
     <!-- Navigation -->
     <nav class="bg-white shadow-md sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
-            <div class="flex items-center space-x-2">
-                <i class="fas fa-search text-blue-600 text-2xl"></i>
-                <span class="text-xl font-bold text-gray-800">Lost & Found</span>
-            </div>
-            <div class="flex items-center space-x-4">
-                <div class="flex items-center space-x-2">
-                    <i class="fas fa-star text-yellow-500"></i>
-                    <span id="userPoints" class="text-sm font-semibold text-gray-700 hidden">0 pts</span>
-                </div>
-                <span id="userEmail" class="text-sm text-gray-600 hidden"></span>
-                <button id="logoutBtn" class="hidden bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition">
-                    Logout
-                </button>
-            </div>
+    <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+        <div class="flex items-center space-x-2">
+            <i class="fas fa-search text-blue-600 text-2xl"></i>
+            <span class="text-xl font-bold text-gray-800">Lost & Found</span>
         </div>
-    </nav>
+        <div class="flex items-center space-x-4">
+            <div id="pointsContainer" class="flex items-center space-x-2 hidden">
+                <i class="fas fa-star text-yellow-500"></i>
+                <span id="userPoints" class="text-sm font-semibold text-gray-700">0 pts</span>
+            </div>
+            <span id="userEmail" class="text-sm text-gray-600 hidden"></span>
+            <button id="logoutBtn" class="hidden bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition">
+                Logout
+            </button>
+        </div>
+    </div>
+</nav>
 
     <!-- Login Page -->
     <div id="loginPage" class="min-h-screen bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center p-4">
