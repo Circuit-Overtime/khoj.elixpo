@@ -21,6 +21,7 @@
     "cors": "*",
     "dotenv": "^17.2.3",
     "express": "*",
+    "googleapis": "^166.0.0",
     "jsonwebtoken": "*",
     "mysql2": "^3.15.3",
     "nodemailer": "*"

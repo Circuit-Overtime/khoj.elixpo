@@ -6,12 +6,6 @@ let otpTimerInterval = null;
 let currentOtpEmail = '';
 let currentOtpIsSignup = false;
 
-// ============== Firebase Configuration ==============
-// Note: Replace with your sanitized service.json credentials
-const firebaseConfig = {
-    // Add your Firebase config here
-};
-
 // ============== DOM Elements ==============
 const loginPage = document.getElementById('loginPage');
 const dashboardPage = document.getElementById('dashboardPage');
@@ -19,7 +13,6 @@ const loginForm = document.getElementById('loginForm');
 const signupForm = document.getElementById('signupForm');
 const otpVerificationForm = document.getElementById('otpVerificationForm');
 const otpSignupVerificationForm = document.getElementById('otpSignupVerificationForm');
-const forgotPasswordForm = document.getElementById('forgotPasswordForm');
 
 // ============== Initial Load ==============
 document.addEventListener('DOMContentLoaded', () => {
@@ -103,15 +96,76 @@ function showAuthMessage(message, isError = false) {
     setTimeout(() => messageDiv.classList.add('hidden'), 6000);
 }
 
-// ============== Google Sign-In ==============
+// ============== Google Sign-In (Request to Backend) ==============
 document.getElementById('googleSignInBtn')?.addEventListener('click', async () => {
     try {
-        showAuthMessage('Initializing Google Sign-In...', false);
-        // Initialize Firebase and get Google Sign-In
-        // This will be handled by Firebase SDK
-        // For now, show placeholder
-        showAuthMessage('Please upload sanitized service.json to enable Google login', true);
+        showAuthMessage('Opening Google Sign-In...', false);
+        
+        // Request backend to generate Google auth URL
+        const res = await fetch(`${API_BASE}/auth/google-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            showAuthMessage(data.message || 'Google login not available', true);
+            return;
+        }
+
+        // Open Google auth URL in popup
+        const width = 500;
+        const height = 600;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+        
+        const popup = window.open(
+            data.authUrl,
+            'Google Sign-In',
+            `width=${width},height=${height},left=${left},top=${top}`
+        );
+
+        // Poll for auth completion
+        let pollCount = 0;
+        const pollInterval = setInterval(async () => {
+            pollCount++;
+            
+            // Check if popup closed
+            if (popup.closed) {
+                clearInterval(pollInterval);
+                
+                // Check if auth was successful
+                try {
+                    const statusRes = await fetch(`${API_BASE}/auth/google-status`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }
+                    });
+                    
+                    if (statusRes.ok) {
+                        const statusData = await statusRes.json();
+                        if (statusData.authenticated) {
+                            currentToken = statusData.token;
+                            currentUser = statusData.user;
+                            localStorage.setItem('token', statusData.token);
+                            localStorage.setItem('user', JSON.stringify(statusData.user));
+                            showDashboard();
+                            showAuthMessage('Google login successful!', false);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error checking auth status:', error);
+                }
+            }
+            
+            // Timeout after 5 minutes
+            if (pollCount > 300) {
+                clearInterval(pollInterval);
+                if (!popup.closed) popup.close();
+                showAuthMessage('Google login timeout', true);
+            }
+        }, 1000);
+
     } catch (error) {
+        console.error('Google sign-in error:', error);
         showAuthMessage('Google login failed', true);
     }
 });
@@ -146,7 +200,7 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
         loginForm.classList.add('hidden');
         otpVerificationForm.classList.remove('hidden');
         document.getElementById('otpEmailDisplay').textContent = email;
-        document.getElementById('rememberMe').value = rememberMe;
+        localStorage.setItem('rememberMe', rememberMe);
         
         clearOtpInputs('#otpInputs .otp-digit');
         startOtpTimer('otpTimer');
@@ -160,7 +214,7 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
 // ============== Email Login - Verify OTP ==============
 document.getElementById('verifyOtpBtn')?.addEventListener('click', async () => {
     const otp = getOtpValue('#otpInputs .otp-digit');
-    const rememberMe = document.getElementById('rememberMe').checked;
+    const rememberMe = localStorage.getItem('rememberMe') === 'true';
 
     if (otp.length !== 6) {
         showAuthMessage('Please enter a valid 6-digit code', true);
@@ -226,7 +280,8 @@ document.getElementById('signupSubmitBtn')?.addEventListener('click', async () =
         signupForm.classList.add('hidden');
         otpSignupVerificationForm.classList.remove('hidden');
         document.getElementById('otpSignupEmailDisplay').textContent = email;
-        document.getElementById('signupName').value = name;
+        localStorage.setItem('signupName', name);
+        localStorage.setItem('signupRememberMe', document.getElementById('signupRememberMe').checked);
         
         clearOtpInputs('#otpSignupInputs .otp-digit-signup');
         startOtpTimer('otpSignupTimer');
@@ -240,8 +295,8 @@ document.getElementById('signupSubmitBtn')?.addEventListener('click', async () =
 // ============== Email Signup - Verify OTP ==============
 document.getElementById('verifyOtpSignupBtn')?.addEventListener('click', async () => {
     const otp = getOtpValue('#otpSignupInputs .otp-digit-signup');
-    const name = document.getElementById('signupName').value;
-    const rememberMe = document.getElementById('signupRememberMe').checked;
+    const name = localStorage.getItem('signupName');
+    const rememberMe = localStorage.getItem('signupRememberMe') === 'true';
 
     if (otp.length !== 6) {
         showAuthMessage('Please enter a valid 6-digit code', true);

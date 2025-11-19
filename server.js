@@ -9,6 +9,10 @@ import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 dotenv.config();
 import { fileURLToPath } from "url";
+import admin from "firebase-admin";
+import fs from "fs";
+import { google } from "googleapis";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
@@ -199,16 +203,37 @@ app.post("/api/auth/verify-otp", async (req, res) => {
   }
 });
 
-// Google Login - Verify Firebase Token
+// Initialize Firebase Admin SDK
+const serviceAccountPath = path.join(__dirname, "serviceAccountKey.json");
+if (fs.existsSync(serviceAccountPath)) {
+  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+  console.log("✓ Firebase Admin SDK initialized");
+} else {
+  console.warn("⚠ serviceAccountKey.json not found. Google login disabled.");
+}
+
+// Google Login - Verify ID Token from Frontend
 app.post("/api/auth/google-login", async (req, res) => {
   try {
-    const { firebaseToken, user: firebaseUser, rememberMe } = req.body;
+    const { idToken, rememberMe } = req.body;
 
-    if (!firebaseUser || !firebaseUser.email) {
-      return res.status(400).json({ message: "Invalid Firebase user data" });
+    if (!idToken) {
+      return res.status(400).json({ message: "ID token required" });
     }
 
-    const { email, name, uid } = firebaseUser;
+    // Verify the ID token with Firebase Admin SDK
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (error) {
+      console.error("Token verification error:", error.message);
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+
+    const { email, name, uid } = decodedToken;
 
     // Check if user exists
     const [existingUser] = await db.query(
@@ -781,7 +806,6 @@ app.get("/api/debug", (req, res) => {
   });
 });
 
-
 // THEN serve static files (this must be AFTER all API routes)
 app.use(express.static(__dirname));
 
@@ -793,4 +817,191 @@ app.get("/", (req, res) => {
 app.listen(3000, "0.0.0.0", () => {
   console.log("✓ API running on port 3000");
   console.log("✓ Access at http://localhost:3000");
+});
+
+// Google OAuth2 Client Configuration
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/google-callback`
+);
+
+// Store OAuth state for verification
+const oauthSessions = new Map();
+
+// Generate Google Auth URL
+app.post("/api/auth/google-url", async (req, res) => {
+  try {
+    const state = require('crypto').randomBytes(32).toString('hex');
+    const sessionId = require('crypto').randomBytes(16).toString('hex');
+    
+    // Store session
+    oauthSessions.set(sessionId, {
+      state,
+      createdAt: Date.now()
+    });
+
+    const scopes = [
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile'
+    ];
+
+    const authUrl = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: scopes,
+      state: state,
+      include_granted_scopes: true,
+      prompt: 'consent'
+    });
+
+    // Store state in session for callback verification
+    oauthSessions.set(state, {
+      sessionId,
+      createdAt: Date.now()
+    });
+
+    res.json({ authUrl, sessionId });
+  } catch (error) {
+    console.error('Google URL generation error:', error);
+    res.status(500).json({ message: 'Failed to generate Google auth URL' });
+  }
+});
+
+// Google Callback Handler
+app.get("/api/auth/google-callback", async (req, res) => {
+  try {
+    const { code, state } = req.query;
+
+    if (!code || !state) {
+      return res.status(400).html('<h1>Missing auth code or state</h1>');
+    }
+
+    // Verify state
+    if (!oauthSessions.has(state)) {
+      return res.status(400).html('<h1>Invalid state parameter</h1>');
+    }
+
+    // Check if state is not too old (5 minutes)
+    const session = oauthSessions.get(state);
+    if (Date.now() - session.createdAt > 5 * 60 * 1000) {
+      oauthSessions.delete(state);
+      return res.status(400).html('<h1>Auth request expired</h1>');
+    }
+
+    // Exchange code for tokens
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
+
+    // Get user info from Google
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const userInfo = await oauth2.userinfo.get();
+    const { email, name, picture, id: googleId } = userInfo.data;
+
+    if (!email) {
+      oauthSessions.delete(state);
+      return res.status(400).html('<h1>Could not retrieve email from Google</h1>');
+    }
+
+    // Check or create user in database
+    const [existingUser] = await db.query(
+      "SELECT id, email, name FROM users WHERE email = ? OR google_id = ?",
+      [email, googleId]
+    );
+
+    let user;
+
+    if (existingUser.length > 0) {
+      user = existingUser[0];
+      // Update google_id if not set
+      if (!user.google_id) {
+        await db.query("UPDATE users SET google_id = ?, login_type = 'google' WHERE id = ?", [
+          googleId,
+          user.id
+        ]);
+      }
+    } else {
+      // Create new user
+      await db.query(
+        "INSERT INTO users (email, name, google_id, login_type) VALUES (?, ?, ?, 'google')",
+        [email, name || email, googleId]
+      );
+
+      const [newUser] = await db.query("SELECT id, email, name FROM users WHERE email = ?", [email]);
+      user = newUser[0];
+    }
+
+    // Create JWT token (30 days for Google login)
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
+      expiresIn: "30d"
+    });
+
+    // Store token temporarily (1 minute) for the popup to retrieve
+    const tempTokenId = require('crypto').randomBytes(16).toString('hex');
+    oauthSessions.set(tempTokenId, {
+      token,
+      user,
+      expiresAt: Date.now() + 60 * 1000
+    });
+
+    // Clean up old session
+    oauthSessions.delete(state);
+
+    // Return HTML that closes popup and notifies parent window
+    res.send(`
+      <html>
+        <head>
+          <title>Google Sign-In</title>
+          <script>
+            // Store token in sessionStorage
+            sessionStorage.setItem('googleAuthToken', '${token}');
+            sessionStorage.setItem('googleAuthUser', '${JSON.stringify(user).replace(/"/g, '\\"')}');
+            
+            // Close popup
+            window.close();
+          </script>
+        </head>
+        <body>
+          <p>Authentication successful. Closing...</p>
+        </body>
+      </html>
+    `);
+
+  } catch (error) {
+    console.error('Google callback error:', error);
+    oauthSessions.delete(req.query.state);
+    res.status(500).html('<h1>Authentication failed. Please try again.</h1>');
+  }
+});
+
+// Check Google Auth Status (called after popup closes)
+app.get("/api/auth/google-status", async (req, res) => {
+  try {
+    // In a real scenario, you'd check if the user is authenticated via the JWT
+    // For now, we'll return success if they have a valid token
+    
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ authenticated: false });
+    }
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      const [user] = await db.query("SELECT id, email, name FROM users WHERE id = ?", [decoded.id]);
+      
+      if (user.length === 0) {
+        return res.status(401).json({ authenticated: false });
+      }
+
+      res.json({
+        authenticated: true,
+        token,
+        user: user[0]
+      });
+    } catch (error) {
+      res.status(401).json({ authenticated: false });
+    }
+  } catch (error) {
+    console.error('Google status check error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
