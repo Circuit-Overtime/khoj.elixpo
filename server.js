@@ -12,11 +12,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json());
-app.use(express.static(__dirname));
 app.use(cors({
     origin: ["http://localhost:6000", "http://51.15.192.6:6000"],
     credentials: true
 }));
+
 const JWT_SECRET = process.env.JWT_SECRET;
 const db = await mysql.createConnection({
   host: "localhost",
@@ -62,6 +62,9 @@ const verifyToken = (req, res, next) => {
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
+
+// IMPORTANT: Define API routes FIRST, before static files
+// Auth Routes
 app.post("/api/auth/signup", async (req, res) => {
   try {
     const { email, password, name } = req.body;
@@ -551,10 +554,27 @@ app.get("/api/users/points", verifyToken, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+
+app.get("/api/debug", (req, res) => {
+  res.json({ 
+    message: "Server is running", 
+    timestamp: new Date(),
+    origin: req.get('origin')
+  });
+});
+
+
+// THEN serve static files (this must be AFTER all API routes)
+app.use(express.static(__dirname));
+
+// Root route (last)
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
+
 app.listen(6000, "0.0.0.0", () => {
   console.log("✓ API running on port 6000");
   console.log("✓ Access at http://localhost:6000");
+  console.log("✓ Access at http://51.15.192.6:6000");
 });
