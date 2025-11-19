@@ -207,6 +207,7 @@ function showDashboard() {
     document.getElementById('userEmail').classList.remove('hidden');
     document.getElementById('logoutBtn').classList.remove('hidden');
     loadBrowseItems();
+    loadUserPoints();
 }
 
 function hideDashboard() {
@@ -266,6 +267,21 @@ async function loadMyItems() {
     }
 }
 
+// Load User Points
+async function loadUserPoints() {
+    try {
+        const res = await fetch(`${API_BASE}/users/points`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        const data = await res.json();
+        const pointsDisplay = document.getElementById('userPoints');
+        pointsDisplay.textContent = `${data.points} pts`;
+        pointsDisplay.classList.remove('hidden');
+    } catch (error) {
+        console.error('Error loading points:', error);
+    }
+}
+
 // Display Items
 function displayItems(items, containerId, isUserItems = false) {
     const container = document.getElementById(containerId);
@@ -308,7 +324,8 @@ async function showItemDetail(item, isUserItems) {
     const statusBadgeClass = {
         'active': 'bg-blue-100 text-blue-800',
         'resolved': 'bg-green-100 text-green-800',
-        'claimed': 'bg-purple-100 text-purple-800'
+        'claimed': 'bg-purple-100 text-purple-800',
+        'found': 'bg-orange-100 text-orange-800'
     };
 
     document.getElementById('modalContent').innerHTML = `
@@ -334,14 +351,46 @@ async function showItemDetail(item, isUserItems) {
     if (isUserItems) {
         document.getElementById('editItemBtn').classList.remove('hidden');
         document.getElementById('deleteItemBtn').classList.remove('hidden');
+        document.getElementById('markFoundBtn').classList.add('hidden');
+        document.getElementById('markClaimedBtn').classList.add('hidden');
+        document.getElementById('viewClaimsBtn').classList.add('hidden');
         document.getElementById('contactUserBtn').classList.add('hidden');
+        document.getElementById('claimFoundBtn').classList.add('hidden');
+
+        // Show mark as found button only for lost items
+        if (item.item_type === 'lost' && item.status !== 'found' && item.status !== 'resolved') {
+            document.getElementById('markFoundBtn').classList.remove('hidden');
+            document.getElementById('markFoundBtn').onclick = () => markAsFound(item.id);
+        }
+
+        // Show mark as claimed button only for found items
+        if (item.item_type === 'found' && item.status !== 'claimed') {
+            document.getElementById('markClaimedBtn').classList.remove('hidden');
+            document.getElementById('markClaimedBtn').onclick = () => markAsClaimed(item.id);
+        }
+
+        // Show view claims button for lost items
+        if (item.item_type === 'lost') {
+            document.getElementById('viewClaimsBtn').classList.remove('hidden');
+            document.getElementById('viewClaimsBtn').onclick = () => showFoundClaims(item.id);
+        }
 
         document.getElementById('editItemBtn').onclick = () => showEditModal(item);
         document.getElementById('deleteItemBtn').onclick = () => deleteItem(item.id);
     } else {
         document.getElementById('editItemBtn').classList.add('hidden');
         document.getElementById('deleteItemBtn').classList.add('hidden');
+        document.getElementById('markFoundBtn').classList.add('hidden');
+        document.getElementById('markClaimedBtn').classList.add('hidden');
+        document.getElementById('viewClaimsBtn').classList.add('hidden');
         document.getElementById('contactUserBtn').classList.remove('hidden');
+        document.getElementById('claimFoundBtn').classList.add('hidden');
+
+        // Show claim found button for lost items
+        if (item.item_type === 'lost' && item.status !== 'resolved') {
+            document.getElementById('claimFoundBtn').classList.remove('hidden');
+            document.getElementById('claimFoundBtn').onclick = () => showClaimFoundModal(item.id);
+        }
 
         document.getElementById('contactUserBtn').onclick = () => {
             const mailtoLink = `mailto:${item.contact_email}?subject=Regarding: ${item.title}`;
@@ -509,3 +558,216 @@ function showToast(message, isError = false) {
     toast.classList.remove('hidden');
     setTimeout(() => toast.classList.add('hidden'), 6000);
 }
+
+// Mark Lost Item as Found
+async function markAsFound(itemId) {
+    if (!confirm('Mark this item as found?')) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/items/${itemId}/mark-found`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            showToast(data.message || 'Error marking item as found', true);
+            return;
+        }
+
+        showToast('Item marked as found!');
+        document.getElementById('itemModal').classList.add('hidden');
+        loadMyItems();
+    } catch (error) {
+        showToast('Error marking item as found', true);
+    }
+}
+
+// Mark Found Item as Claimed
+async function markAsClaimed(itemId) {
+    if (!confirm('Mark this item as claimed?')) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/items/${itemId}/mark-claimed`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            showToast(data.message || 'Error marking item as claimed', true);
+            return;
+        }
+
+        showToast('Item marked as claimed!');
+        document.getElementById('itemModal').classList.add('hidden');
+        loadMyItems();
+    } catch (error) {
+        showToast('Error marking item as claimed', true);
+    }
+}
+
+// Show Found Claims Modal
+async function showFoundClaims(itemId) {
+    try {
+        const res = await fetch(`${API_BASE}/found-claims/item/${itemId}`);
+        const claims = await res.json();
+
+        const claimsContent = document.getElementById('claimsContent');
+        if (claims.length === 0) {
+            claimsContent.innerHTML = '<p class="text-center text-gray-600">No claims yet for this item</p>';
+        } else {
+            claimsContent.innerHTML = claims.map(claim => `
+                <div class="border rounded-lg p-4 space-y-2">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h4 class="font-semibold text-gray-800">${claim.name}</h4>
+                            <p class="text-sm text-gray-600">${claim.email}</p>
+                        </div>
+                        <span class="text-xs font-semibold ${
+                            claim.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                            claim.status === 'accepted' ? 'bg-green-100 text-green-800' :
+                            'bg-red-100 text-red-800'
+                        } px-3 py-1 rounded">
+                            ${claim.status.toUpperCase()}
+                        </span>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Description</p>
+                        <p class="text-sm text-gray-800">${claim.description}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Location Found</p>
+                        <p class="text-sm text-gray-800">${claim.location}</p>
+                    </div>
+                    ${claim.contact_phone ? `<div class="text-sm text-gray-600">Phone: ${claim.contact_phone}</div>` : ''}
+                    ${claim.status === 'pending' ? `
+                        <div class="flex space-x-2">
+                            <button class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700" onclick="acceptClaim(${claim.id})">
+                                Accept
+                            </button>
+                            <button class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700" onclick="rejectClaim(${claim.id})">
+                                Reject
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        }
+
+        document.getElementById('claimsModal').classList.remove('hidden');
+    } catch (error) {
+        console.error('Error loading claims:', error);
+        showToast('Error loading claims', true);
+    }
+}
+
+// Accept a Found Claim
+async function acceptClaim(claimId) {
+    try {
+        const res = await fetch(`${API_BASE}/found-claims/${claimId}/accept`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            showToast(data.message || 'Error accepting claim', true);
+            return;
+        }
+
+        showToast('Claim accepted and 10 points awarded!');
+        loadUserPoints();
+        document.getElementById('claimsModal').classList.add('hidden');
+        document.getElementById('itemModal').classList.add('hidden');
+        loadBrowseItems();
+    } catch (error) {
+        showToast('Error accepting claim', true);
+    }
+}
+
+// Reject a Found Claim
+async function rejectClaim(claimId) {
+    if (!confirm('Are you sure you want to reject this claim?')) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/found-claims/${claimId}/reject`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            showToast(data.message || 'Error rejecting claim', true);
+            return;
+        }
+
+        showToast('Claim rejected');
+        document.getElementById('claimsModal').classList.add('hidden');
+    } catch (error) {
+        showToast('Error rejecting claim', true);
+    }
+}
+
+// Show Claim Found Modal
+function showClaimFoundModal(itemId) {
+    document.getElementById('claimOriginalItemId').value = itemId;
+    document.getElementById('claimEmail').value = currentUser.email || '';
+    document.getElementById('itemModal').classList.add('hidden');
+    document.getElementById('claimFoundModal').classList.remove('hidden');
+}
+
+// Close Claims Modal
+document.querySelectorAll('.close-claims-modal').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.getElementById('claimsModal').classList.add('hidden');
+    });
+});
+
+// Close Claim Found Modal
+document.querySelectorAll('.close-claim-found-modal').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.getElementById('claimFoundModal').classList.add('hidden');
+    });
+});
+
+// Submit Found Claim
+document.getElementById('claimFoundForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const itemId = document.getElementById('claimOriginalItemId').value;
+    const description = document.getElementById('claimDescription').value;
+    const location = document.getElementById('claimLocation').value;
+    const email = document.getElementById('claimEmail').value;
+    const phone = document.getElementById('claimPhone').value;
+
+    try {
+        const res = await fetch(`${API_BASE}/found-claims`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${currentToken}`
+            },
+            body: JSON.stringify({
+                original_item_id: itemId,
+                description,
+                location,
+                contact_email: email,
+                contact_phone: phone
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            showToast(data.message || 'Error submitting claim', true);
+            return;
+        }
+
+        showToast('Found claim submitted successfully! The item owner will contact you soon.');
+        document.getElementById('claimFoundForm').reset();
+        document.getElementById('claimFoundModal').classList.add('hidden');
+        loadBrowseItems();
+    } catch (error) {
+        showToast('Error submitting claim', true);
+    }
+});

@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) UNIQUE NOT NULL,
   password VARCHAR(255) NOT NULL,
   name VARCHAR(255) NOT NULL,
+  points INT DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -32,7 +33,7 @@ CREATE TABLE IF NOT EXISTS items (
   category VARCHAR(100),
   location VARCHAR(255),
   item_date DATE,
-  status ENUM('active', 'resolved', 'claimed') DEFAULT 'active',
+  status ENUM('active', 'resolved', 'claimed', 'found') DEFAULT 'active',
   image_url VARCHAR(255),
   contact_email VARCHAR(255),
   contact_phone VARCHAR(20),
@@ -46,3 +47,22 @@ CREATE INDEX idx_items_user_id ON items(user_id);
 CREATE INDEX idx_items_type ON items(item_type);
 CREATE INDEX idx_items_status ON items(status);
 CREATE INDEX idx_otp_user_id ON otp_verifications(user_id);
+
+-- Found item claims table - tracks when users claim to have found lost items
+CREATE TABLE IF NOT EXISTS found_claims (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  original_item_id INT NOT NULL,
+  claimed_by_user_id INT NOT NULL,
+  description TEXT,
+  location VARCHAR(255),
+  contact_email VARCHAR(255),
+  contact_phone VARCHAR(20),
+  status ENUM('pending', 'accepted', 'rejected') DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (original_item_id) REFERENCES items(id) ON DELETE CASCADE,
+  FOREIGN KEY (claimed_by_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_original_item_id (original_item_id),
+  INDEX idx_claimed_by_user_id (claimed_by_user_id),
+  INDEX idx_status (status)
+);

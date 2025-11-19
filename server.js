@@ -347,6 +347,210 @@ app.delete("/api/items/:id", verifyToken, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+// Mark Lost Item as Found
+app.put("/api/items/:id/mark-found", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [items] = await db.query("SELECT user_id, item_type FROM items WHERE id = ?", [id]);
+    if (items.length === 0) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+    if (items[0].user_id !== req.userId) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+    if (items[0].item_type !== 'lost') {
+      return res.status(400).json({ message: "Only lost items can be marked as found" });
+    }
+    await db.query("UPDATE items SET status = 'found' WHERE id = ?", [id]);
+    res.json({ message: "Item marked as found successfully" });
+  } catch (error) {
+    console.error("Mark found error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Mark Found Item as Claimed
+app.put("/api/items/:id/mark-claimed", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [items] = await db.query("SELECT user_id, item_type FROM items WHERE id = ?", [id]);
+    if (items.length === 0) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+    if (items[0].user_id !== req.userId) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+    if (items[0].item_type !== 'found') {
+      return res.status(400).json({ message: "Only found items can be marked as claimed" });
+    }
+    await db.query("UPDATE items SET status = 'claimed' WHERE id = ?", [id]);
+    res.json({ message: "Item marked as claimed successfully" });
+  } catch (error) {
+    console.error("Mark claimed error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Create a Found Claim for a Lost Item
+app.post("/api/found-claims", verifyToken, async (req, res) => {
+  try {
+    const { original_item_id, description, location, contact_email, contact_phone } = req.body;
+    
+    if (!original_item_id) {
+      return res.status(400).json({ message: "Original item ID is required" });
+    }
+    
+    const [items] = await db.query(
+      "SELECT id, item_type FROM items WHERE id = ? AND item_type = 'lost'",
+      [original_item_id]
+    );
+    
+    if (items.length === 0) {
+      return res.status(404).json({ message: "Lost item not found" });
+    }
+    
+    await db.query(
+      "INSERT INTO found_claims (original_item_id, claimed_by_user_id, description, location, contact_email, contact_phone) VALUES (?, ?, ?, ?, ?, ?)",
+      [original_item_id, req.userId, description, location, contact_email, contact_phone]
+    );
+    
+    res.status(201).json({ message: "Found claim created successfully" });
+  } catch (error) {
+    console.error("Create found claim error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get Found Claims for a Lost Item
+app.get("/api/found-claims/item/:itemId", async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    
+    const [claims] = await db.query(
+      `SELECT fc.id, fc.description, fc.location, fc.contact_email, fc.contact_phone, 
+              fc.status, fc.created_at, u.name, u.email
+       FROM found_claims fc
+       JOIN users u ON fc.claimed_by_user_id = u.id
+       WHERE fc.original_item_id = ?
+       ORDER BY fc.created_at DESC`,
+      [itemId]
+    );
+    
+    res.json(claims);
+  } catch (error) {
+    console.error("Get found claims error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get User's Found Claims
+app.get("/api/found-claims/user", verifyToken, async (req, res) => {
+  try {
+    const [claims] = await db.query(
+      `SELECT fc.id, fc.original_item_id, i.title, i.description, fc.location, 
+              fc.status, fc.created_at, i.category
+       FROM found_claims fc
+       JOIN items i ON fc.original_item_id = i.id
+       WHERE fc.claimed_by_user_id = ?
+       ORDER BY fc.created_at DESC`,
+      [req.userId]
+    );
+    
+    res.json(claims);
+  } catch (error) {
+    console.error("Get user found claims error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Accept a Found Claim and Award Points
+app.put("/api/found-claims/:claimId/accept", verifyToken, async (req, res) => {
+  try {
+    const { claimId } = req.params;
+    
+    const [claims] = await db.query(
+      "SELECT original_item_id, claimed_by_user_id FROM found_claims WHERE id = ?",
+      [claimId]
+    );
+    
+    if (claims.length === 0) {
+      return res.status(404).json({ message: "Claim not found" });
+    }
+    
+    const [items] = await db.query(
+      "SELECT user_id FROM items WHERE id = ?",
+      [claims[0].original_item_id]
+    );
+    
+    if (items[0].user_id !== req.userId) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+    
+    // Award 10 points to the user who found the item
+    const claimedByUserId = claims[0].claimed_by_user_id;
+    await db.query("UPDATE users SET points = points + 10 WHERE id = ?", [claimedByUserId]);
+    
+    // Update claim status
+    await db.query("UPDATE found_claims SET status = 'accepted' WHERE id = ?", [claimId]);
+    
+    // Update item status to resolved
+    await db.query("UPDATE items SET status = 'resolved' WHERE id = ?", [claims[0].original_item_id]);
+    
+    res.json({ message: "Claim accepted and 10 points awarded" });
+  } catch (error) {
+    console.error("Accept claim error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Reject a Found Claim
+app.put("/api/found-claims/:claimId/reject", verifyToken, async (req, res) => {
+  try {
+    const { claimId } = req.params;
+    
+    const [claims] = await db.query(
+      "SELECT original_item_id FROM found_claims WHERE id = ?",
+      [claimId]
+    );
+    
+    if (claims.length === 0) {
+      return res.status(404).json({ message: "Claim not found" });
+    }
+    
+    const [items] = await db.query(
+      "SELECT user_id FROM items WHERE id = ?",
+      [claims[0].original_item_id]
+    );
+    
+    if (items[0].user_id !== req.userId) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+    
+    await db.query("UPDATE found_claims SET status = 'rejected' WHERE id = ?", [claimId]);
+    
+    res.json({ message: "Claim rejected" });
+  } catch (error) {
+    console.error("Reject claim error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get User Points
+app.get("/api/users/points", verifyToken, async (req, res) => {
+  try {
+    const [users] = await db.query("SELECT points FROM users WHERE id = ?", [req.userId]);
+    
+    if (users.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    res.json({ points: users[0].points });
+  } catch (error) {
+    console.error("Get points error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
