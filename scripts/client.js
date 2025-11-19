@@ -2,21 +2,95 @@ const API_BASE = 'http://172.31.110.79:3000/api';
 let currentToken = localStorage.getItem('token');
 let currentUser = JSON.parse(localStorage.getItem('user') || '{}');
 let currentEditingItem = null;
+let otpTimerInterval = null;
+let currentOtpEmail = '';
+let currentOtpIsSignup = false;
+
+// ============== Firebase Configuration ==============
+// Note: Replace with your sanitized service.json credentials
+const firebaseConfig = {
+    // Add your Firebase config here
+};
 
 // ============== DOM Elements ==============
 const loginPage = document.getElementById('loginPage');
 const dashboardPage = document.getElementById('dashboardPage');
 const loginForm = document.getElementById('loginForm');
 const signupForm = document.getElementById('signupForm');
+const otpVerificationForm = document.getElementById('otpVerificationForm');
+const otpSignupVerificationForm = document.getElementById('otpSignupVerificationForm');
 const forgotPasswordForm = document.getElementById('forgotPasswordForm');
-const otpSection = document.getElementById('otpSection');
 
 // ============== Initial Load ==============
 document.addEventListener('DOMContentLoaded', () => {
     if (currentToken) {
         showDashboard();
     }
+    initializeOtpInputs();
 });
+
+// ============== OTP Input Handler ==============
+function initializeOtpInputs() {
+    // Login OTP inputs
+    const loginOtpInputs = document.querySelectorAll('#otpInputs .otp-digit');
+    loginOtpInputs.forEach((input, index) => {
+        input.addEventListener('input', (e) => handleOtpInput(e, index, loginOtpInputs));
+        input.addEventListener('keydown', (e) => handleOtpKeydown(e, index, loginOtpInputs));
+    });
+
+    // Signup OTP inputs
+    const signupOtpInputs = document.querySelectorAll('#otpSignupInputs .otp-digit-signup');
+    signupOtpInputs.forEach((input, index) => {
+        input.addEventListener('input', (e) => handleOtpInput(e, index, signupOtpInputs));
+        input.addEventListener('keydown', (e) => handleOtpKeydown(e, index, signupOtpInputs));
+    });
+}
+
+function handleOtpInput(e, index, inputs) {
+    if (e.target.value) {
+        e.target.value = e.target.value.slice(-1);
+        if (index < inputs.length - 1) {
+            inputs[index + 1].focus();
+        }
+    }
+}
+
+function handleOtpKeydown(e, index, inputs) {
+    if (e.key === 'Backspace' && !e.target.value && index > 0) {
+        inputs[index - 1].focus();
+    }
+}
+
+function getOtpValue(selector) {
+    const inputs = document.querySelectorAll(selector);
+    return Array.from(inputs).map(input => input.value).join('');
+}
+
+function clearOtpInputs(selector) {
+    const inputs = document.querySelectorAll(selector);
+    inputs.forEach(input => input.value = '');
+    inputs[0].focus();
+}
+
+// ============== OTP Timer ==============
+function startOtpTimer(timerElementId, duration = 300) {
+    let timeLeft = duration;
+    const timerElement = document.getElementById(timerElementId);
+    
+    if (otpTimerInterval) clearInterval(otpTimerInterval);
+    
+    otpTimerInterval = setInterval(() => {
+        const minutes = Math.floor(timeLeft / 60);
+        const seconds = timeLeft % 60;
+        timerElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        
+        if (timeLeft === 0) {
+            clearInterval(otpTimerInterval);
+            timerElement.textContent = 'Expired';
+        }
+        timeLeft--;
+    }, 1000);
+}
 
 // ============== Auth Functions ==============
 
@@ -29,21 +103,80 @@ function showAuthMessage(message, isError = false) {
     setTimeout(() => messageDiv.classList.add('hidden'), 6000);
 }
 
-// Login
+// ============== Google Sign-In ==============
+document.getElementById('googleSignInBtn')?.addEventListener('click', async () => {
+    try {
+        showAuthMessage('Initializing Google Sign-In...', false);
+        // Initialize Firebase and get Google Sign-In
+        // This will be handled by Firebase SDK
+        // For now, show placeholder
+        showAuthMessage('Please upload sanitized service.json to enable Google login', true);
+    } catch (error) {
+        showAuthMessage('Google login failed', true);
+    }
+});
+
+// ============== Email Login - Send OTP ==============
 document.getElementById('loginSubmitBtn').addEventListener('click', async () => {
     const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
+    const rememberMe = document.getElementById('rememberMe').checked;
 
-    if (!email || !password) {
-        showAuthMessage('Please fill all fields', true);
+    if (!email) {
+        showAuthMessage('Please enter your email', true);
         return;
     }
 
     try {
-        const res = await fetch(`${API_BASE}/auth/login`, {
+        const res = await fetch(`${API_BASE}/auth/send-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify({ email, isSignup: false })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            showAuthMessage(data.message, true);
+            return;
+        }
+
+        currentOtpEmail = email;
+        currentOtpIsSignup = false;
+        
+        // Show OTP verification form
+        loginForm.classList.add('hidden');
+        otpVerificationForm.classList.remove('hidden');
+        document.getElementById('otpEmailDisplay').textContent = email;
+        document.getElementById('rememberMe').value = rememberMe;
+        
+        clearOtpInputs('#otpInputs .otp-digit');
+        startOtpTimer('otpTimer');
+        
+        showAuthMessage('OTP sent to your email', false);
+    } catch (error) {
+        showAuthMessage('Error sending OTP', true);
+    }
+});
+
+// ============== Email Login - Verify OTP ==============
+document.getElementById('verifyOtpBtn')?.addEventListener('click', async () => {
+    const otp = getOtpValue('#otpInputs .otp-digit');
+    const rememberMe = document.getElementById('rememberMe').checked;
+
+    if (otp.length !== 6) {
+        showAuthMessage('Please enter a valid 6-digit code', true);
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/auth/verify-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: currentOtpEmail,
+                otp,
+                rememberMe,
+                isSignup: false
+            })
         });
 
         const data = await res.json();
@@ -56,10 +189,163 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
         currentUser = data.user;
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
+        
         showDashboard();
     } catch (error) {
-        showAuthMessage('Login failed', true);
+        showAuthMessage('Error verifying OTP', true);
     }
+});
+
+// ============== Email Signup - Send OTP ==============
+document.getElementById('signupSubmitBtn')?.addEventListener('click', async () => {
+    const name = document.getElementById('signupName').value;
+    const email = document.getElementById('signupEmail').value;
+
+    if (!name || !email) {
+        showAuthMessage('Please fill all fields', true);
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/auth/send-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, isSignup: true })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            showAuthMessage(data.message, true);
+            return;
+        }
+
+        currentOtpEmail = email;
+        currentOtpIsSignup = true;
+        
+        // Show OTP verification form
+        signupForm.classList.add('hidden');
+        otpSignupVerificationForm.classList.remove('hidden');
+        document.getElementById('otpSignupEmailDisplay').textContent = email;
+        document.getElementById('signupName').value = name;
+        
+        clearOtpInputs('#otpSignupInputs .otp-digit-signup');
+        startOtpTimer('otpSignupTimer');
+        
+        showAuthMessage('OTP sent to your email', false);
+    } catch (error) {
+        showAuthMessage('Error sending OTP', true);
+    }
+});
+
+// ============== Email Signup - Verify OTP ==============
+document.getElementById('verifyOtpSignupBtn')?.addEventListener('click', async () => {
+    const otp = getOtpValue('#otpSignupInputs .otp-digit-signup');
+    const name = document.getElementById('signupName').value;
+    const rememberMe = document.getElementById('signupRememberMe').checked;
+
+    if (otp.length !== 6) {
+        showAuthMessage('Please enter a valid 6-digit code', true);
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/auth/verify-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: currentOtpEmail,
+                otp,
+                name,
+                rememberMe,
+                isSignup: true
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            showAuthMessage(data.message, true);
+            return;
+        }
+
+        currentToken = data.token;
+        currentUser = data.user;
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        
+        showDashboard();
+    } catch (error) {
+        showAuthMessage('Error verifying OTP', true);
+    }
+});
+
+// ============== OTP Resend ==============
+document.getElementById('resendOtpBtn')?.addEventListener('click', async () => {
+    try {
+        const res = await fetch(`${API_BASE}/auth/send-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: currentOtpEmail, isSignup: currentOtpIsSignup })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            showAuthMessage(data.message, true);
+            return;
+        }
+
+        clearOtpInputs('#otpInputs .otp-digit');
+        startOtpTimer('otpTimer');
+        showAuthMessage('OTP resent to your email', false);
+    } catch (error) {
+        showAuthMessage('Error resending OTP', true);
+    }
+});
+
+document.getElementById('resendOtpSignupBtn')?.addEventListener('click', async () => {
+    try {
+        const res = await fetch(`${API_BASE}/auth/send-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: currentOtpEmail, isSignup: true })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            showAuthMessage(data.message, true);
+            return;
+        }
+
+        clearOtpInputs('#otpSignupInputs .otp-digit-signup');
+        startOtpTimer('otpSignupTimer');
+        showAuthMessage('OTP resent to your email', false);
+    } catch (error) {
+        showAuthMessage('Error resending OTP', true);
+    }
+});
+
+// ============== Form Navigation ==============
+document.getElementById('showSignupBtn')?.addEventListener('click', () => {
+    loginForm.classList.add('hidden');
+    signupForm.classList.remove('hidden');
+});
+
+document.getElementById('showLoginBtn')?.addEventListener('click', () => {
+    signupForm.classList.add('hidden');
+    loginForm.classList.remove('hidden');
+});
+
+document.getElementById('backToLoginBtn')?.addEventListener('click', () => {
+    otpVerificationForm.classList.add('hidden');
+    loginForm.classList.remove('hidden');
+    clearOtpInputs('#otpInputs .otp-digit');
+    if (otpTimerInterval) clearInterval(otpTimerInterval);
+});
+
+document.getElementById('backToSignupBtn')?.addEventListener('click', () => {
+    otpSignupVerificationForm.classList.add('hidden');
+    signupForm.classList.remove('hidden');
+    clearOtpInputs('#otpSignupInputs .otp-digit-signup');
+    if (otpTimerInterval) clearInterval(otpTimerInterval);
 });
 
 // Signup

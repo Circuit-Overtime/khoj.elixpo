@@ -6,12 +6,14 @@ import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
 import path from "path";
 import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
 dotenv.config();
 import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
 app.use(cors({
     origin: ["http://localhost:3000", "http://127.0.0.1:5500"],
     credentials: true
@@ -64,7 +66,200 @@ const generateOTP = () => {
 };
 
 // IMPORTANT: Define API routes FIRST, before static files
-// Auth Routes
+// ========== PASSWORDLESS AUTH ROUTES ==========
+
+// Send OTP for Email Login/Signup
+app.post("/api/auth/send-otp", async (req, res) => {
+  try {
+    const { email, isSignup } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    // Check if user exists
+    const [existingUser] = await db.query("SELECT id FROM users WHERE email = ?", [email]);
+
+    if (isSignup && existingUser.length > 0) {
+      return res.status(400).json({ message: "Email already registered" });
+    }
+
+    if (!isSignup && existingUser.length === 0) {
+      return res.status(404).json({ message: "Email not registered" });
+    }
+
+    // Store OTP in database
+    await db.query(
+      "INSERT INTO otp_verifications (email, otp, purpose, expires_at) VALUES (?, ?, 'login', ?)",
+      [email, otp, expiresAt]
+    );
+
+    // Send OTP via email
+    try {
+      await transporter.sendMail({
+        from: mail_user,
+        to: email,
+        subject: "Your Lost & Found Login Code",
+        html: `
+          <h2>Your Verification Code</h2>
+          <p>Enter this code to continue:</p>
+          <h1 style="letter-spacing: 2px; color: #2563eb;">${otp}</h1>
+          <p>This code expires in 5 minutes.</p>
+          <p>Do not share this code with anyone.</p>
+        `,
+      });
+    } catch (emailError) {
+      console.error("Email send error:", emailError);
+      return res.status(500).json({ message: "Failed to send OTP email" });
+    }
+
+    res.json({ message: "OTP sent to email" });
+  } catch (error) {
+    console.error("Send OTP error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Verify OTP and Create/Login User
+app.post("/api/auth/verify-otp", async (req, res) => {
+  try {
+    const { email, otp, name, rememberMe, isSignup } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP required" });
+    }
+
+    // Verify OTP
+    const [otpRecords] = await db.query(
+      "SELECT id FROM otp_verifications WHERE email = ? AND otp = ? AND used = FALSE AND expires_at > NOW() AND purpose = 'login'",
+      [email, otp]
+    );
+
+    if (otpRecords.length === 0) {
+      return res.status(401).json({ message: "Invalid or expired OTP" });
+    }
+
+    // Mark OTP as used
+    await db.query("UPDATE otp_verifications SET used = TRUE WHERE id = ?", [otpRecords[0].id]);
+
+    let user;
+
+    if (isSignup) {
+      // Create new user
+      if (!name) {
+        return res.status(400).json({ message: "Name required for signup" });
+      }
+
+      const [existingUser] = await db.query("SELECT id FROM users WHERE email = ?", [email]);
+      if (existingUser.length > 0) {
+        return res.status(400).json({ message: "Email already registered" });
+      }
+
+      await db.query("INSERT INTO users (email, name, login_type) VALUES (?, ?, 'email')", [
+        email,
+        name,
+      ]);
+
+      const [newUser] = await db.query("SELECT id, email, name FROM users WHERE email = ?", [email]);
+      user = newUser[0];
+    } else {
+      // Login existing user
+      const [existingUser] = await db.query("SELECT id, email, name FROM users WHERE email = ?", [email]);
+      if (existingUser.length === 0) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      user = existingUser[0];
+    }
+
+    // Create JWT with expiry based on rememberMe
+    const expiresIn = rememberMe ? "30d" : "15d";
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
+      expiresIn,
+    });
+
+    // Set httpOnly cookie
+    const maxAge = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 15 * 24 * 60 * 60 * 1000;
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge,
+    });
+
+    res.json({
+      message: "Login successful",
+      token,
+      user: { id: user.id, email: user.email, name: user.name },
+    });
+  } catch (error) {
+    console.error("Verify OTP error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Google Login - Verify Firebase Token
+app.post("/api/auth/google-login", async (req, res) => {
+  try {
+    const { firebaseToken, user: firebaseUser, rememberMe } = req.body;
+
+    if (!firebaseUser || !firebaseUser.email) {
+      return res.status(400).json({ message: "Invalid Firebase user data" });
+    }
+
+    const { email, name, uid } = firebaseUser;
+
+    // Check if user exists
+    const [existingUser] = await db.query(
+      "SELECT id, email, name FROM users WHERE email = ? OR firebase_uid = ?",
+      [email, uid]
+    );
+
+    let user;
+
+    if (existingUser.length > 0) {
+      // Update firebase_uid if not set
+      user = existingUser[0];
+      if (!user.firebase_uid) {
+        await db.query("UPDATE users SET firebase_uid = ? WHERE id = ?", [uid, user.id]);
+      }
+    } else {
+      // Create new user
+      await db.query(
+        "INSERT INTO users (email, name, firebase_uid, google_id, login_type) VALUES (?, ?, ?, ?, 'google')",
+        [email, name || email, uid, uid]
+      );
+
+      const [newUser] = await db.query("SELECT id, email, name FROM users WHERE email = ?", [email]);
+      user = newUser[0];
+    }
+
+    // Create JWT with 30-day expiry for Google login
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
+      expiresIn: "30d",
+    });
+
+    // Set httpOnly cookie with 30-day maxAge
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      message: "Google login successful",
+      token,
+      user: { id: user.id, email: user.email, name: user.name },
+    });
+  } catch (error) {
+    console.error("Google login error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ========== OLD AUTH ROUTES (DEPRECATED - Keeping for backward compatibility) ==========
 app.post("/api/auth/signup", async (req, res) => {
   try {
     const { email, password, name } = req.body;

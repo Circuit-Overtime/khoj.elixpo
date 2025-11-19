@@ -4,9 +4,12 @@ USE items;
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   email VARCHAR(255) UNIQUE NOT NULL,
-  password VARCHAR(255) NOT NULL,
+  password VARCHAR(255),
   name VARCHAR(255) NOT NULL,
   points INT DEFAULT 0,
+  google_id VARCHAR(255) UNIQUE,
+  firebase_uid VARCHAR(255) UNIQUE,
+  login_type ENUM('email', 'google') DEFAULT 'email',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -14,13 +17,16 @@ CREATE TABLE IF NOT EXISTS users (
 -- OTP verification table
 CREATE TABLE IF NOT EXISTS otp_verifications (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
+  user_id INT,
+  email VARCHAR(255),
   otp VARCHAR(6) NOT NULL,
-  purpose ENUM('password_reset', 'email_verification') DEFAULT 'password_reset',
+  purpose ENUM('password_reset', 'email_verification', 'login') DEFAULT 'login',
   expires_at DATETIME NOT NULL,
   used BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_email (email),
+  INDEX idx_otp (otp)
 );
 
 -- Lost and Found items table
