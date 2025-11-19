@@ -1,3 +1,5 @@
+
+CREATE DATABASE items;
 USE items;
 
 -- Users table with authentication
@@ -43,23 +45,16 @@ CREATE TABLE IF NOT EXISTS items (
   image_url VARCHAR(255),
   contact_email VARCHAR(255),
   contact_phone VARCHAR(20),
+  resolved_by_user_id INT,
+  accepted_claim_id INT,
+  resolved_at TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_items_user_id (user_id),
+  INDEX idx_items_type (item_type),
+  INDEX idx_items_status (status)
 );
-
--- Add new columns for resolved items tracking
-ALTER TABLE items ADD COLUMN IF NOT EXISTS resolved_by_user_id INT;
-ALTER TABLE items ADD COLUMN IF NOT EXISTS accepted_claim_id INT;
-ALTER TABLE items ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP NULL;
-ALTER TABLE items ADD FOREIGN KEY IF NOT EXISTS (resolved_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE items ADD FOREIGN KEY IF NOT EXISTS (accepted_claim_id) REFERENCES found_claims(id) ON DELETE SET NULL;
-
--- Create indexes for better query performance
-CREATE INDEX IF NOT EXISTS idx_items_user_id ON items(user_id);
-CREATE INDEX IF NOT EXISTS idx_items_type ON items(item_type);
-CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
-CREATE INDEX IF NOT EXISTS idx_otp_user_id ON otp_verifications(user_id);
 
 -- Found item claims table - tracks when users claim to have found lost items
 CREATE TABLE IF NOT EXISTS found_claims (
@@ -79,3 +74,21 @@ CREATE TABLE IF NOT EXISTS found_claims (
   INDEX idx_claimed_by_user_id (claimed_by_user_id),
   INDEX idx_status (status)
 );
+
+-- Add foreign keys to items table for resolved tracking (after found_claims is created)
+ALTER TABLE items ADD CONSTRAINT fk_resolved_by 
+  FOREIGN KEY (resolved_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+ALTER TABLE items ADD CONSTRAINT fk_accepted_claim 
+  FOREIGN KEY (accepted_claim_id) REFERENCES found_claims(id) ON DELETE SET NULL;
+
+-- Create index for resolved items
+CREATE INDEX IF NOT EXISTS idx_items_resolved_at ON items(resolved_at);
+CREATE INDEX IF NOT EXISTS idx_items_resolved_by ON items(resolved_by_user_id);
+
+-- Ensure login_type column exists and has proper values
+ALTER TABLE users MODIFY COLUMN login_type ENUM('email', 'google') DEFAULT 'email';
+
+-- Add index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_login_type ON users(login_type);

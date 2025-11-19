@@ -181,6 +181,36 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
     }
 
     try {
+        // First, check if email exists and what login type it uses
+        const checkRes = await fetch(`${API_BASE}/auth/check-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+
+        const checkData = await checkRes.json();
+
+        if (checkRes.ok && checkData.exists) {
+            // Email exists - check login type
+            if (checkData.login_type === 'google') {
+                showAuthMessage(
+                    `⚠️ This email is registered with Google Sign-In. Please use "Sign in with Google" button instead.`,
+                    true
+                );
+                document.getElementById('loginEmail').value = '';
+                return;
+            }
+            // Email exists with email login - proceed with OTP
+            showAuthMessage(`Welcome back! OTP will be sent to ${email}`, false);
+        } else {
+            // Email doesn't exist - will be auto-registered after OTP verification
+            showAuthMessage(
+                `📝 New email detected. You will be automatically registered after OTP verification.`,
+                false
+            );
+        }
+
+        // Send OTP
         const res = await fetch(`${API_BASE}/auth/send-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -205,13 +235,14 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
         clearOtpInputs('#otpInputs .otp-digit');
         startOtpTimer('otpTimer');
         
-        showAuthMessage('OTP sent to your email', false);
+        showAuthMessage('✓ OTP sent to your email', false);
     } catch (error) {
-        showAuthMessage('Error sending OTP', true);
+        console.error('Error checking email:', error);
+        showAuthMessage('Error processing login request', true);
     }
 });
 
-// ============== Email Login - Verify OTP ==============
+// ============== Email Login - Verify OTP (Updated) ==============
 document.getElementById('verifyOtpBtn')?.addEventListener('click', async () => {
     const otp = getOtpValue('#otpInputs .otp-digit');
     const rememberMe = localStorage.getItem('rememberMe') === 'true';
@@ -229,7 +260,8 @@ document.getElementById('verifyOtpBtn')?.addEventListener('click', async () => {
                 email: currentOtpEmail,
                 otp,
                 rememberMe,
-                isSignup: false
+                isSignup: false,
+                isAutoRegister: true
             })
         });
 
@@ -244,8 +276,16 @@ document.getElementById('verifyOtpBtn')?.addEventListener('click', async () => {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         
-        showDashboard();
+        // Show success message
+        if (data.isNewUser) {
+            showAuthMessage(`🎉 Welcome! Your account has been created and you're now logged in.`, false);
+        } else {
+            showAuthMessage(`✓ Login successful!`, false);
+        }
+        
+        setTimeout(() => showDashboard(), 1500);
     } catch (error) {
+        console.error('Verify OTP error:', error);
         showAuthMessage('Error verifying OTP', true);
     }
 });

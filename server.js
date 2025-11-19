@@ -128,10 +128,44 @@ app.post("/api/auth/send-otp", async (req, res) => {
   }
 });
 
+// Check if email exists and what login type it uses
+app.post("/api/auth/check-email", async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const [users] = await db.query(
+      "SELECT id, login_type FROM users WHERE email = ?",
+      [email]
+    );
+
+    if (users.length === 0) {
+      // Email doesn't exist
+      return res.json({
+        exists: false,
+        message: "Email not registered"
+      });
+    }
+
+    // Email exists
+    res.json({
+      exists: true,
+      login_type: users[0].login_type,
+      message: `Email registered with ${users[0].login_type} login`
+    });
+  } catch (error) {
+    console.error("Check email error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // Verify OTP and Create/Login User
 app.post("/api/auth/verify-otp", async (req, res) => {
   try {
-    const { email, otp, name, rememberMe, isSignup } = req.body;
+    const { email, otp, name, rememberMe, isSignup, isAutoRegister } = req.body;
 
     if (!email || !otp) {
       return res.status(400).json({ message: "Email and OTP required" });
@@ -151,32 +185,62 @@ app.post("/api/auth/verify-otp", async (req, res) => {
     await db.query("UPDATE otp_verifications SET used = TRUE WHERE id = ?", [otpRecords[0].id]);
 
     let user;
+    let isNewUser = false;
 
-    if (isSignup) {
-      // Create new user
-      if (!name) {
-        return res.status(400).json({ message: "Name required for signup" });
+    // Check if user exists
+    const [existingUsers] = await db.query(
+      "SELECT id, email, name, login_type FROM users WHERE email = ?",
+      [email]
+    );
+
+    if (existingUsers.length > 0) {
+      // User exists
+      user = existingUsers[0];
+      
+      // If user registered via Google, don't allow email OTP login
+      if (user.login_type === 'google') {
+        return res.status(400).json({ 
+          message: "This email is registered with Google Sign-In. Please use Google login instead." 
+        });
       }
-
-      const [existingUser] = await db.query("SELECT id FROM users WHERE email = ?", [email]);
-      if (existingUser.length > 0) {
-        return res.status(400).json({ message: "Email already registered" });
-      }
-
-      await db.query("INSERT INTO users (email, name, login_type) VALUES (?, ?, 'email')", [
-        email,
-        name,
-      ]);
-
-      const [newUser] = await db.query("SELECT id, email, name FROM users WHERE email = ?", [email]);
-      user = newUser[0];
     } else {
-      // Login existing user
-      const [existingUser] = await db.query("SELECT id, email, name FROM users WHERE email = ?", [email]);
-      if (existingUser.length === 0) {
+      // User doesn't exist - auto register if coming from email login (not signup form)
+      if (isAutoRegister || !isSignup) {
+        // Auto-register user with generated name from email
+        const namePart = email.split('@')[0];
+        const autoName = name || namePart.charAt(0).toUpperCase() + namePart.slice(1);
+        
+        await db.query(
+          "INSERT INTO users (email, name, login_type) VALUES (?, ?, 'email')",
+          [email, autoName]
+        );
+
+        const [newUser] = await db.query(
+          "SELECT id, email, name FROM users WHERE email = ?",
+          [email]
+        );
+        user = newUser[0];
+        isNewUser = true;
+      } else if (isSignup) {
+        // Signup form requires name
+        if (!name) {
+          return res.status(400).json({ message: "Name required for signup" });
+        }
+
+        await db.query(
+          "INSERT INTO users (email, name, login_type) VALUES (?, ?, 'email')",
+          [email, name]
+        );
+
+        const [newUser] = await db.query(
+          "SELECT id, email, name FROM users WHERE email = ?",
+          [email]
+        );
+        user = newUser[0];
+        isNewUser = true;
+      } else {
         return res.status(404).json({ message: "User not found" });
       }
-      user = existingUser[0];
     }
 
     // Create JWT with expiry based on rememberMe
@@ -195,8 +259,9 @@ app.post("/api/auth/verify-otp", async (req, res) => {
     });
 
     res.json({
-      message: "Login successful",
+      message: isNewUser ? "Account created and logged in successfully" : "Login successful",
       token,
+      isNewUser,
       user: { id: user.id, email: user.email, name: user.name },
     });
   } catch (error) {
