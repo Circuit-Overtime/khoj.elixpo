@@ -7,11 +7,13 @@ import nodemailer from "nodemailer";
 import path from "path";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
-dotenv.config();
+import crypto from "crypto";
 import { fileURLToPath } from "url";
 import admin from "firebase-admin";
 import fs from "fs";
 import { google } from "googleapis";
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -204,7 +206,7 @@ app.post("/api/auth/verify-otp", async (req, res) => {
 });
 
 // Initialize Firebase Admin SDK
-const serviceAccountPath = path.join(__dirname, "serviceAccountKey.json");
+const serviceAccountPath = path.join(__dirname, "service.json");
 if (fs.existsSync(serviceAccountPath)) {
   const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
   admin.initializeApp({
@@ -832,8 +834,8 @@ const oauthSessions = new Map();
 // Generate Google Auth URL
 app.post("/api/auth/google-url", async (req, res) => {
   try {
-    const state = require('crypto').randomBytes(32).toString('hex');
-    const sessionId = require('crypto').randomBytes(16).toString('hex');
+    const state = crypto.randomBytes(32).toString('hex');
+    const sessionId = crypto.randomBytes(16).toString('hex');
     
     // Store session
     oauthSessions.set(sessionId, {
@@ -873,19 +875,19 @@ app.get("/api/auth/google-callback", async (req, res) => {
     const { code, state } = req.query;
 
     if (!code || !state) {
-      return res.status(400).html('<h1>Missing auth code or state</h1>');
+      return res.status(400).send('<h1>Missing auth code or state</h1>');
     }
 
     // Verify state
     if (!oauthSessions.has(state)) {
-      return res.status(400).html('<h1>Invalid state parameter</h1>');
+      return res.status(400).send('<h1>Invalid state parameter</h1>');
     }
 
     // Check if state is not too old (5 minutes)
     const session = oauthSessions.get(state);
     if (Date.now() - session.createdAt > 5 * 60 * 1000) {
       oauthSessions.delete(state);
-      return res.status(400).html('<h1>Auth request expired</h1>');
+      return res.status(400).send('<h1>Auth request expired</h1>');
     }
 
     // Exchange code for tokens
@@ -895,11 +897,11 @@ app.get("/api/auth/google-callback", async (req, res) => {
     // Get user info from Google
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const userInfo = await oauth2.userinfo.get();
-    const { email, name, picture, id: googleId } = userInfo.data;
+    const { email, name, id: googleId } = userInfo.data;
 
     if (!email) {
       oauthSessions.delete(state);
-      return res.status(400).html('<h1>Could not retrieve email from Google</h1>');
+      return res.status(400).send('<h1>Could not retrieve email from Google</h1>');
     }
 
     // Check or create user in database
@@ -935,26 +937,27 @@ app.get("/api/auth/google-callback", async (req, res) => {
       expiresIn: "30d"
     });
 
-    // Store token temporarily (1 minute) for the popup to retrieve
-    const tempTokenId = require('crypto').randomBytes(16).toString('hex');
-    oauthSessions.set(tempTokenId, {
-      token,
-      user,
-      expiresAt: Date.now() + 60 * 1000
-    });
-
     // Clean up old session
     oauthSessions.delete(state);
 
-    // Return HTML that closes popup and notifies parent window
+    // Return HTML that closes popup and stores token
     res.send(`
       <html>
         <head>
           <title>Google Sign-In</title>
           <script>
-            // Store token in sessionStorage
-            sessionStorage.setItem('googleAuthToken', '${token}');
-            sessionStorage.setItem('googleAuthUser', '${JSON.stringify(user).replace(/"/g, '\\"')}');
+            // Store token in localStorage
+            localStorage.setItem('token', '${token}');
+            localStorage.setItem('user', '${JSON.stringify(user).replace(/'/g, "\\'")}');
+            
+            // Notify parent window
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'GOOGLE_AUTH_SUCCESS',
+                token: '${token}',
+                user: ${JSON.stringify(user)}
+              }, window.location.origin);
+            }
             
             // Close popup
             window.close();
@@ -969,7 +972,7 @@ app.get("/api/auth/google-callback", async (req, res) => {
   } catch (error) {
     console.error('Google callback error:', error);
     oauthSessions.delete(req.query.state);
-    res.status(500).html('<h1>Authentication failed. Please try again.</h1>');
+    res.status(500).send('<h1>Authentication failed. Please try again.</h1>');
   }
 });
 

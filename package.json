@@ -18,9 +18,11 @@
   "license": "MIT",
   "dependencies": {
     "bcryptjs": "*",
+    "cookie-parser": "^1.4.7",
     "cors": "*",
     "dotenv": "^17.2.3",
     "express": "*",
+    "firebase-admin": "^13.6.0",
     "googleapis": "^166.0.0",
     "jsonwebtoken": "*",
     "mysql2": "^3.15.3",

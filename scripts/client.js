@@ -514,21 +514,13 @@ document.getElementById('resetPasswordBtn').addEventListener('click', async () =
     }
 });
 
-// Show/Hide Forms
-document.getElementById('showSignupBtn').addEventListener('click', () => {
-    loginForm.classList.add('hidden');
-    signupForm.classList.remove('hidden');
-});
 
 document.getElementById('showLoginBtn').addEventListener('click', () => {
     signupForm.classList.add('hidden');
     loginForm.classList.remove('hidden');
 });
 
-document.getElementById('showForgotPasswordBtn').addEventListener('click', () => {
-    loginForm.classList.add('hidden');
-    forgotPasswordForm.classList.remove('hidden');
-});
+
 
 document.getElementById('backToLoginBtn').addEventListener('click', () => {
     forgotPasswordForm.classList.add('hidden');
