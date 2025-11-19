@@ -99,7 +99,6 @@ const oauthSessions = new Map();
 
 // ========== AUTH ROUTES ==========
 
-// Send OTP for Email Login/Signup
 app.post("/api/auth/send-otp", async (req, res) => {
   try {
     const { email, isSignup } = req.body;
@@ -110,7 +109,17 @@ app.post("/api/auth/send-otp", async (req, res) => {
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-    const [existingUser] = await db.query("SELECT id FROM users WHERE email = ?", [email]);
+    const [existingUser] = await db.query(
+      "SELECT id, login_type FROM users WHERE email = ?", 
+      [email]
+    );
+
+    // Check if email exists with Google login
+    if (existingUser.length > 0 && existingUser[0].login_type === 'google') {
+      return res.status(400).json({ 
+        message: "⚠️ This email is registered with Google Sign-In. Please use 'Sign in with Google' button instead." 
+      });
+    }
 
     if (isSignup && existingUser.length > 0) {
       return res.status(400).json({ message: "Email already registered" });

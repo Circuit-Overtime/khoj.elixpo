@@ -1,5 +1,3 @@
-
-CREATE DATABASE items;
 USE items;
 
 -- Users table with authentication

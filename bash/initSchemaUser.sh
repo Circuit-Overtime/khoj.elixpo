@@ -1,7 +1,13 @@
 #!/bin/bash
 
+sudo apt update
+sudo apt install -y mariadb-server
+sudo systemctl enable mariadb
+sudo systemctl start mariadb
+
 # Create user using sudo to access root without password prompt
 sudo mysql -h localhost -u root << EOF
+CREATE DATABASE items;
 CREATE USER IF NOT EXISTS 'elixpo'@'localhost' IDENTIFIED BY 'elixpo';
 GRANT ALL PRIVILEGES ON *.* TO 'elixpo'@'localhost' WITH GRANT OPTION;
 FLUSH PRIVILEGES;

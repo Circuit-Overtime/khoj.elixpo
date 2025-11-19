@@ -209,7 +209,7 @@ window.addEventListener('message', (event) => {
     }
 });
 
-// ============== Email Login - Send OTP ==============
+
 document.getElementById('loginSubmitBtn').addEventListener('click', async () => {
     const email = document.getElementById('loginEmail').value;
     const rememberMe = document.getElementById('rememberMe').checked;
@@ -220,6 +220,7 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
     }
 
     try {
+        // First check if email exists
         const checkRes = await fetch(`${API_BASE}/auth/check-email`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -245,6 +246,7 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
             );
         }
 
+        // Send OTP - now with additional check
         const res = await fetch(`${API_BASE}/auth/send-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -253,6 +255,12 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
 
         const data = await res.json();
         if (!res.ok) {
+            // Check if it's the Google login error
+            if (data.message.includes('Google Sign-In')) {
+                showAuthMessage(data.message, true);
+                document.getElementById('loginEmail').value = '';
+                return;
+            }
             showAuthMessage(data.message, true);
             return;
         }
