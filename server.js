@@ -568,13 +568,8 @@ app.get("/api/debug", (req, res) => {
 // THEN serve static files (this must be AFTER all API routes)
 app.use(express.static(__dirname));
 
-// Root route (last)
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
-});
 
 app.listen(6000, "0.0.0.0", () => {
   console.log("✓ API running on port 6000");
   console.log("✓ Access at http://localhost:6000");
-  console.log("✓ Access at http://51.15.192.6:6000");
 });

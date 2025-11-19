@@ -43,10 +43,10 @@ CREATE TABLE IF NOT EXISTS items (
 );
 
 -- Create indexes for better query performance
-CREATE INDEX idx_items_user_id ON items(user_id);
-CREATE INDEX idx_items_type ON items(item_type);
-CREATE INDEX idx_items_status ON items(status);
-CREATE INDEX idx_otp_user_id ON otp_verifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_items_user_id ON items(user_id);
+CREATE INDEX IF NOT EXISTS idx_items_type ON items(item_type);
+CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
+CREATE INDEX IF NOT EXISTS idx_otp_user_id ON otp_verifications(user_id);
 
 -- Found item claims table - tracks when users claim to have found lost items
 CREATE TABLE IF NOT EXISTS found_claims (
