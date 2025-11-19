@@ -18,20 +18,20 @@ const otpSignupVerificationForm = document.getElementById('otpSignupVerification
 document.addEventListener('DOMContentLoaded', () => {
     if (currentToken) {
         showDashboard();
+    } else {
+        showLoginPage();
     }
     initializeOtpInputs();
 });
 
 // ============== OTP Input Handler ==============
 function initializeOtpInputs() {
-    // Login OTP inputs
     const loginOtpInputs = document.querySelectorAll('#otpInputs .otp-digit');
     loginOtpInputs.forEach((input, index) => {
         input.addEventListener('input', (e) => handleOtpInput(e, index, loginOtpInputs));
         input.addEventListener('keydown', (e) => handleOtpKeydown(e, index, loginOtpInputs));
     });
 
-    // Signup OTP inputs
     const signupOtpInputs = document.querySelectorAll('#otpSignupInputs .otp-digit-signup');
     signupOtpInputs.forEach((input, index) => {
         input.addEventListener('input', (e) => handleOtpInput(e, index, signupOtpInputs));
@@ -86,8 +86,6 @@ function startOtpTimer(timerElementId, duration = 300) {
 }
 
 // ============== Auth Functions ==============
-
-// Show Message
 function showAuthMessage(message, isError = false) {
     const messageDiv = document.getElementById('authMessage');
     messageDiv.textContent = message;
@@ -96,12 +94,48 @@ function showAuthMessage(message, isError = false) {
     setTimeout(() => messageDiv.classList.add('hidden'), 6000);
 }
 
-// ============== Google Sign-In (Request to Backend) ==============
+function showLoginPage() {
+    loginPage.classList.remove('hidden');
+    dashboardPage.classList.add('hidden');
+    loginForm.classList.remove('hidden');
+    signupForm.classList.add('hidden');
+    otpVerificationForm.classList.add('hidden');
+    otpSignupVerificationForm.classList.add('hidden');
+}
+
+function showDashboard() {
+    loginPage.classList.add('hidden');
+    dashboardPage.classList.remove('hidden');
+    document.getElementById('userEmail').textContent = currentUser.email;
+    document.getElementById('userEmail').classList.remove('hidden');
+    document.getElementById('logoutBtn').classList.remove('hidden');
+    loadBrowseItems();
+    loadUserPoints();
+}
+
+function hideDashboard() {
+    loginPage.classList.remove('hidden');
+    dashboardPage.classList.add('hidden');
+    document.getElementById('userEmail').classList.add('hidden');
+    document.getElementById('logoutBtn').classList.add('hidden');
+    currentToken = null;
+    currentUser = {};
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('rememberMe');
+    localStorage.removeItem('signupName');
+    localStorage.removeItem('signupRememberMe');
+    
+    // Reset all forms to login state
+    showLoginPage();
+    document.getElementById('loginForm').reset();
+}
+
+// ============== Google Sign-In ==============
 document.getElementById('googleSignInBtn')?.addEventListener('click', async () => {
     try {
         showAuthMessage('Opening Google Sign-In...', false);
         
-        // Request backend to generate Google auth URL
         const res = await fetch(`${API_BASE}/auth/google-url`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
@@ -113,7 +147,6 @@ document.getElementById('googleSignInBtn')?.addEventListener('click', async () =
             return;
         }
 
-        // Open Google auth URL in popup
         const width = 500;
         const height = 600;
         const left = window.screenX + (window.outerWidth - width) / 2;
@@ -125,38 +158,27 @@ document.getElementById('googleSignInBtn')?.addEventListener('click', async () =
             `width=${width},height=${height},left=${left},top=${top}`
         );
 
-        // Poll for auth completion
+        if (!popup) {
+            showAuthMessage('Please disable popup blocker', true);
+            return;
+        }
+
         let pollCount = 0;
         const pollInterval = setInterval(async () => {
             pollCount++;
             
-            // Check if popup closed
             if (popup.closed) {
                 clearInterval(pollInterval);
                 
-                // Check if auth was successful
-                try {
-                    const statusRes = await fetch(`${API_BASE}/auth/google-status`, {
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }
-                    });
-                    
-                    if (statusRes.ok) {
-                        const statusData = await statusRes.json();
-                        if (statusData.authenticated) {
-                            currentToken = statusData.token;
-                            currentUser = statusData.user;
-                            localStorage.setItem('token', statusData.token);
-                            localStorage.setItem('user', JSON.stringify(statusData.user));
-                            showDashboard();
-                            showAuthMessage('Google login successful!', false);
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error checking auth status:', error);
+                const token = localStorage.getItem('token');
+                if (token) {
+                    currentToken = token;
+                    currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+                    showDashboard();
+                    showAuthMessage('Google login successful!', false);
                 }
             }
             
-            // Timeout after 5 minutes
             if (pollCount > 300) {
                 clearInterval(pollInterval);
                 if (!popup.closed) popup.close();
@@ -167,6 +189,21 @@ document.getElementById('googleSignInBtn')?.addEventListener('click', async () =
     } catch (error) {
         console.error('Google sign-in error:', error);
         showAuthMessage('Google login failed', true);
+    }
+});
+
+// Listen for messages from Google auth popup
+window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+    
+    if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
+        currentToken = event.data.token;
+        currentUser = event.data.user;
+        localStorage.setItem('token', event.data.token);
+        localStorage.setItem('user', JSON.stringify(event.data.user));
+        
+        showDashboard();
+        showAuthMessage('Google login successful!', false);
     }
 });
 
@@ -181,7 +218,6 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
     }
 
     try {
-        // First, check if email exists and what login type it uses
         const checkRes = await fetch(`${API_BASE}/auth/check-email`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -191,7 +227,6 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
         const checkData = await checkRes.json();
 
         if (checkRes.ok && checkData.exists) {
-            // Email exists - check login type
             if (checkData.login_type === 'google') {
                 showAuthMessage(
                     `⚠️ This email is registered with Google Sign-In. Please use "Sign in with Google" button instead.`,
@@ -200,17 +235,14 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
                 document.getElementById('loginEmail').value = '';
                 return;
             }
-            // Email exists with email login - proceed with OTP
             showAuthMessage(`Welcome back! OTP will be sent to ${email}`, false);
         } else {
-            // Email doesn't exist - will be auto-registered after OTP verification
             showAuthMessage(
                 `📝 New email detected. You will be automatically registered after OTP verification.`,
                 false
             );
         }
 
-        // Send OTP
         const res = await fetch(`${API_BASE}/auth/send-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -226,7 +258,6 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
         currentOtpEmail = email;
         currentOtpIsSignup = false;
         
-        // Show OTP verification form
         loginForm.classList.add('hidden');
         otpVerificationForm.classList.remove('hidden');
         document.getElementById('otpEmailDisplay').textContent = email;
@@ -242,7 +273,7 @@ document.getElementById('loginSubmitBtn').addEventListener('click', async () => 
     }
 });
 
-// ============== Email Login - Verify OTP (Updated) ==============
+// ============== Email Login - Verify OTP ==============
 document.getElementById('verifyOtpBtn')?.addEventListener('click', async () => {
     const otp = getOtpValue('#otpInputs .otp-digit');
     const rememberMe = localStorage.getItem('rememberMe') === 'true';
@@ -276,7 +307,6 @@ document.getElementById('verifyOtpBtn')?.addEventListener('click', async () => {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         
-        // Show success message
         if (data.isNewUser) {
             showAuthMessage(`🎉 Welcome! Your account has been created and you're now logged in.`, false);
         } else {
@@ -316,7 +346,6 @@ document.getElementById('signupSubmitBtn')?.addEventListener('click', async () =
         currentOtpEmail = email;
         currentOtpIsSignup = true;
         
-        // Show OTP verification form
         signupForm.classList.add('hidden');
         otpSignupVerificationForm.classList.remove('hidden');
         document.getElementById('otpSignupEmailDisplay').textContent = email;
@@ -367,7 +396,8 @@ document.getElementById('verifyOtpSignupBtn')?.addEventListener('click', async (
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         
-        showDashboard();
+        showAuthMessage('🎉 Welcome! Your account has been created.', false);
+        setTimeout(() => showDashboard(), 1500);
     } catch (error) {
         showAuthMessage('Error verifying OTP', true);
     }
@@ -379,7 +409,7 @@ document.getElementById('resendOtpBtn')?.addEventListener('click', async () => {
         const res = await fetch(`${API_BASE}/auth/send-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: currentOtpEmail, isSignup: currentOtpIsSignup })
+            body: JSON.stringify({ email: currentOtpEmail, isSignup: false })
         });
 
         const data = await res.json();
@@ -443,192 +473,24 @@ document.getElementById('backToSignupBtn')?.addEventListener('click', () => {
     if (otpTimerInterval) clearInterval(otpTimerInterval);
 });
 
-// Signup
-document.getElementById('signupSubmitBtn').addEventListener('click', async () => {
-    const name = document.getElementById('signupName').value;
-    const email = document.getElementById('signupEmail').value;
-    const password = document.getElementById('signupPassword').value;
-    const confirmPassword = document.getElementById('signupConfirmPassword').value;
-
-    if (!name || !email || !password || !confirmPassword) {
-        showAuthMessage('Please fill all fields', true);
-        return;
-    }
-
-    if (password !== confirmPassword) {
-        showAuthMessage('Passwords do not match', true);
-        return;
-    }
-
-    try {
-        const res = await fetch(`${API_BASE}/auth/signup`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password, name })
-        });
-
-        const data = await res.json();
-        if (!res.ok) {
-            showAuthMessage(data.message, true);
-            return;
-        }
-
-        showAuthMessage('Account created! Please login.');
-        setTimeout(() => {
-            signupForm.classList.add('hidden');
-            loginForm.classList.remove('hidden');
-            document.getElementById('signupName').value = '';
-            document.getElementById('signupEmail').value = '';
-            document.getElementById('signupPassword').value = '';
-            document.getElementById('signupConfirmPassword').value = '';
-        }, 2000);
-    } catch (error) {
-        showAuthMessage('Signup failed', true);
-    }
-});
-
-// Forgot Password
-document.getElementById('requestOtpBtn').addEventListener('click', async () => {
-    
-    let email = document.getElementById('resetEmail').value;
-    if (!email) {
-        showAuthMessage('Please enter your email', true);
-        return;
-    }
-
-    try {
-        const res = await fetch(`${API_BASE}/auth/password`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email })
-        });
-        console.log("Requesting OTP for email:", email);
-        const data = await res.json();
-        if (!res.ok) {
-            showAuthMessage(data.message, true);
-            return;
-        }
-
-        showAuthMessage('OTP sent to your email');
-        otpSection.classList.remove('hidden');
-    } catch (error) {
-        showAuthMessage('Request failed', true);
-    }
-});
-
-// Reset Password
-document.getElementById('resetPasswordBtn').addEventListener('click', async () => {
-    const email = document.getElementById('resetEmail').value;
-    const otp = document.getElementById('otpInput').value;
-    const newPassword = document.getElementById('newPassword').value;
-
-    if (!email || !otp || !newPassword) {
-        showAuthMessage('Please fill all fields', true);
-        return;
-    }
-
-    try {
-        const res = await fetch(`${API_BASE}/auth/reset-password`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, otp, newPassword })
-        });
-
-        const data = await res.json();
-        if (!res.ok) {
-            showAuthMessage(data.message, true);
-            return;
-        }
-
-        showAuthMessage('Password reset successfully!');
-        setTimeout(() => {
-            forgotPasswordForm.classList.add('hidden');
-            loginForm.classList.remove('hidden');
-            document.getElementById('resetEmail').value = '';
-            document.getElementById('otpInput').value = '';
-            document.getElementById('newPassword').value = '';
-            otpSection.classList.add('hidden');
-        }, 2000);
-    } catch (error) {
-        showAuthMessage('Password reset failed', true);
-    }
-});
-
-
-document.getElementById('showLoginBtn').addEventListener('click', () => {
-    signupForm.classList.add('hidden');
-    loginForm.classList.remove('hidden');
-});
-
-
-
-document.getElementById('backToLoginBtn').addEventListener('click', () => {
-    forgotPasswordForm.classList.add('hidden');
-    loginForm.classList.remove('hidden');
-    document.getElementById('resetEmail').value = '';
-    document.getElementById('otpInput').value = '';
-    document.getElementById('newPassword').value = '';
-    otpSection.classList.add('hidden');
+// ============== Logout ==============
+document.getElementById('logoutBtn')?.addEventListener('click', () => {
+    hideDashboard();
 });
 
 // ============== Dashboard Functions ==============
 
-function showDashboard() {
-    loginPage.classList.add('hidden');
-    dashboardPage.classList.remove('hidden');
-    document.getElementById('userEmail').textContent = currentUser.email;
-    document.getElementById('userEmail').classList.remove('hidden');
-    document.getElementById('logoutBtn').classList.remove('hidden');
-    loadBrowseItems();
-    loadUserPoints();
-}
-
-function hideDashboard() {
-    loginPage.classList.remove('hidden');
-    dashboardPage.classList.add('hidden');
-    document.getElementById('userEmail').classList.add('hidden');
-    document.getElementById('logoutBtn').classList.add('hidden');
-    currentToken = null;
-    currentUser = {};
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-}
-
-// Logout
-document.getElementById('logoutBtn').addEventListener('click', hideDashboard);
-
-// Tab Navigation
-document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const tabName = btn.dataset.tab;
-        
-        document.querySelectorAll('.tab-btn').forEach(b => {
-            b.classList.remove('active', 'border-blue-600', 'text-blue-600');
-            b.classList.add('border-transparent', 'text-gray-600');
-        });
-        btn.classList.add('active', 'border-blue-600', 'text-blue-600');
-        btn.classList.remove('border-transparent', 'text-gray-600');
-
-        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
-        document.getElementById(`${tabName}-tab`).classList.remove('hidden');
-
-        if (tabName === 'my-items') loadMyItems();
-        if (tabName === 'resolved-items') loadResolvedItems();
-    });
-});
-
-// Load Browse Items
-async function loadBrowseItems() {
+function loadBrowseItems() {
     try {
-        const res = await fetch(`${API_BASE}/items`);
-        const items = await res.json();
-        displayItems(items, 'itemsList');
+        fetch(`${API_BASE}/items`)
+            .then(res => res.json())
+            .then(items => displayItems(items, 'itemsList'))
+            .catch(error => console.error('Error loading items:', error));
     } catch (error) {
         console.error('Error loading items:', error);
     }
 }
 
-// Load My Items
 async function loadMyItems() {
     try {
         const res = await fetch(`${API_BASE}/items/user`, {
@@ -641,7 +503,6 @@ async function loadMyItems() {
     }
 }
 
-// Load Resolved Items
 async function loadResolvedItems() {
     try {
         const res = await fetch(`${API_BASE}/items?status=resolved`);
@@ -652,7 +513,6 @@ async function loadResolvedItems() {
     }
 }
 
-// Load User Points
 async function loadUserPoints() {
     try {
         const res = await fetch(`${API_BASE}/users/points`, {
@@ -667,7 +527,6 @@ async function loadUserPoints() {
     }
 }
 
-// Display Items
 function displayItems(items, containerId, isUserItems = false) {
     const container = document.getElementById(containerId);
     container.innerHTML = '';
@@ -681,7 +540,6 @@ function displayItems(items, containerId, isUserItems = false) {
         const card = document.createElement('div');
         card.className = 'bg-white rounded-lg shadow-md hover:shadow-lg transition overflow-hidden cursor-pointer';
         
-        // Determine card color based on status first, then item type
         let bgColor = '';
         let icon = '';
         let statusDisplay = '';
@@ -721,7 +579,6 @@ function displayItems(items, containerId, isUserItems = false) {
     });
 }
 
-// Display Resolved Items with Resolver Information
 function displayResolvedItems(items) {
     const container = document.getElementById('resolvedItemsList');
     container.innerHTML = '';
@@ -763,7 +620,6 @@ function displayResolvedItems(items) {
     });
 }
 
-// Show Resolved Item Detail with Full Information
 function showResolvedItemDetail(item) {
     const modal = document.getElementById('itemModal');
     document.getElementById('modalTitle').textContent = item.title;
@@ -808,7 +664,6 @@ function showResolvedItemDetail(item) {
         </div>
     `;
 
-    // Hide all buttons for resolved items view
     document.getElementById('editItemBtn').classList.add('hidden');
     document.getElementById('deleteItemBtn').classList.add('hidden');
     document.getElementById('markFoundBtn').classList.add('hidden');
@@ -820,7 +675,6 @@ function showResolvedItemDetail(item) {
     modal.classList.remove('hidden');
 }
 
-// Show Item Detail
 async function showItemDetail(item, isUserItems) {
     const modal = document.getElementById('itemModal');
     document.getElementById('modalTitle').textContent = item.title;
@@ -861,19 +715,16 @@ async function showItemDetail(item, isUserItems) {
         document.getElementById('contactUserBtn').classList.add('hidden');
         document.getElementById('claimFoundBtn').classList.add('hidden');
 
-        // Show mark as found button only for lost items
         if (item.item_type === 'lost' && item.status !== 'found' && item.status !== 'resolved') {
             document.getElementById('markFoundBtn').classList.remove('hidden');
             document.getElementById('markFoundBtn').onclick = () => markAsFound(item.id);
         }
 
-        // Show mark as claimed button only for found items
         if (item.item_type === 'found' && item.status !== 'claimed') {
             document.getElementById('markClaimedBtn').classList.remove('hidden');
             document.getElementById('markClaimedBtn').onclick = () => markAsClaimed(item.id);
         }
 
-        // Show view claims button for lost items
         if (item.item_type === 'lost') {
             document.getElementById('viewClaimsBtn').classList.remove('hidden');
             document.getElementById('viewClaimsBtn').onclick = () => showFoundClaims(item.id);
@@ -890,7 +741,6 @@ async function showItemDetail(item, isUserItems) {
         document.getElementById('contactUserBtn').classList.remove('hidden');
         document.getElementById('claimFoundBtn').classList.add('hidden');
 
-        // Show claim found button for lost items
         if (item.item_type === 'lost' && item.status !== 'resolved') {
             document.getElementById('claimFoundBtn').classList.remove('hidden');
             document.getElementById('claimFoundBtn').onclick = () => showClaimFoundModal(item.id);
@@ -905,14 +755,12 @@ async function showItemDetail(item, isUserItems) {
     modal.classList.remove('hidden');
 }
 
-// Close Modal
 document.querySelectorAll('.close-modal').forEach(btn => {
     btn.addEventListener('click', () => {
         document.getElementById('itemModal').classList.add('hidden');
     });
 });
 
-// Show Edit Modal
 function showEditModal(item) {
     currentEditingItem = item;
     document.getElementById('editItemId').value = item.id;
@@ -927,8 +775,7 @@ function showEditModal(item) {
     document.getElementById('editModal').classList.remove('hidden');
 }
 
-// Edit Item Form
-document.getElementById('editItemForm').addEventListener('submit', async (e) => {
+document.getElementById('editItemForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const id = document.getElementById('editItemId').value;
 
@@ -966,14 +813,12 @@ document.getElementById('editItemForm').addEventListener('submit', async (e) => 
     }
 });
 
-// Close Edit Modal
 document.querySelectorAll('.close-edit-modal').forEach(btn => {
     btn.addEventListener('click', () => {
         document.getElementById('editModal').classList.add('hidden');
     });
 });
 
-// Delete Item
 async function deleteItem(itemId) {
     if (!confirm('Are you sure you want to delete this item?')) return;
 
@@ -997,8 +842,7 @@ async function deleteItem(itemId) {
     }
 }
 
-// Add Item Form
-document.getElementById('addItemForm').addEventListener('submit', async (e) => {
+document.getElementById('addItemForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     try {
@@ -1034,8 +878,7 @@ document.getElementById('addItemForm').addEventListener('submit', async (e) => {
     }
 });
 
-// Filter Items
-document.getElementById('filterBtn').addEventListener('click', async () => {
+document.getElementById('filterBtn')?.addEventListener('click', async () => {
     const search = document.getElementById('searchInput').value;
     const type = document.getElementById('typeFilter').value;
     const status = document.getElementById('statusFilter').value;
@@ -1054,7 +897,6 @@ document.getElementById('filterBtn').addEventListener('click', async () => {
     }
 });
 
-// Toast Notification
 function showToast(message, isError = false) {
     const toast = document.getElementById('toast');
     toast.textContent = message;
@@ -1063,7 +905,6 @@ function showToast(message, isError = false) {
     setTimeout(() => toast.classList.add('hidden'), 6000);
 }
 
-// Mark Lost Item as Found
 async function markAsFound(itemId) {
     if (!confirm('Mark this item as found?')) return;
 
@@ -1087,7 +928,6 @@ async function markAsFound(itemId) {
     }
 }
 
-// Mark Found Item as Claimed
 async function markAsClaimed(itemId) {
     if (!confirm('Mark this item as claimed?')) return;
 
@@ -1111,7 +951,6 @@ async function markAsClaimed(itemId) {
     }
 }
 
-// Show Found Claims Modal
 async function showFoundClaims(itemId) {
     try {
         const res = await fetch(`${API_BASE}/found-claims/item/${itemId}`);
@@ -1166,7 +1005,6 @@ async function showFoundClaims(itemId) {
     }
 }
 
-// Accept a Found Claim
 async function acceptClaim(claimId) {
     try {
         const res = await fetch(`${API_BASE}/found-claims/${claimId}/accept`, {
@@ -1190,7 +1028,6 @@ async function acceptClaim(claimId) {
     }
 }
 
-// Reject a Found Claim
 async function rejectClaim(claimId) {
     if (!confirm('Are you sure you want to reject this claim?')) return;
 
@@ -1213,7 +1050,6 @@ async function rejectClaim(claimId) {
     }
 }
 
-// Show Claim Found Modal
 function showClaimFoundModal(itemId) {
     document.getElementById('claimOriginalItemId').value = itemId;
     document.getElementById('claimEmail').value = currentUser.email || '';
@@ -1221,22 +1057,19 @@ function showClaimFoundModal(itemId) {
     document.getElementById('claimFoundModal').classList.remove('hidden');
 }
 
-// Close Claims Modal
 document.querySelectorAll('.close-claims-modal').forEach(btn => {
     btn.addEventListener('click', () => {
         document.getElementById('claimsModal').classList.add('hidden');
     });
 });
 
-// Close Claim Found Modal
 document.querySelectorAll('.close-claim-found-modal').forEach(btn => {
     btn.addEventListener('click', () => {
         document.getElementById('claimFoundModal').classList.add('hidden');
     });
 });
 
-// Submit Found Claim
-document.getElementById('claimFoundForm').addEventListener('submit', async (e) => {
+document.getElementById('claimFoundForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const itemId = document.getElementById('claimOriginalItemId').value;
@@ -1274,4 +1107,24 @@ document.getElementById('claimFoundForm').addEventListener('submit', async (e) =
     } catch (error) {
         showToast('Error submitting claim', true);
     }
+});
+
+// Tab Navigation
+document.querySelectorAll('.tab-btn')?.forEach(btn => {
+    btn.addEventListener('click', () => {
+        const tabName = btn.dataset.tab;
+        
+        document.querySelectorAll('.tab-btn').forEach(b => {
+            b.classList.remove('active', 'border-blue-600', 'text-blue-600');
+            b.classList.add('border-transparent', 'text-gray-600');
+        });
+        btn.classList.add('active', 'border-blue-600', 'text-blue-600');
+        btn.classList.remove('border-transparent', 'text-gray-600');
+
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+        document.getElementById(`${tabName}-tab`).classList.remove('hidden');
+
+        if (tabName === 'my-items') loadMyItems();
+        if (tabName === 'resolved-items') loadResolvedItems();
+    });
 });
