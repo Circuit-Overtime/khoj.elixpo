@@ -1,4 +1,4 @@
-const API_BASE = '/api';
+const API_BASE = 'http://172.31.110.79:3000/api';
 let currentToken = localStorage.getItem('token');
 let currentUser = JSON.parse(localStorage.getItem('user') || '{}');
 let currentEditingItem = null;
@@ -240,6 +240,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         document.getElementById(`${tabName}-tab`).classList.remove('hidden');
 
         if (tabName === 'my-items') loadMyItems();
+        if (tabName === 'resolved-items') loadResolvedItems();
     });
 });
 
@@ -264,6 +265,17 @@ async function loadMyItems() {
         displayItems(items, 'myItemsList', true);
     } catch (error) {
         console.error('Error loading my items:', error);
+    }
+}
+
+// Load Resolved Items
+async function loadResolvedItems() {
+    try {
+        const res = await fetch(`${API_BASE}/items?status=resolved`);
+        const items = await res.json();
+        displayResolvedItems(items);
+    } catch (error) {
+        console.error('Error loading resolved items:', error);
     }
 }
 
@@ -314,6 +326,105 @@ function displayItems(items, containerId, isUserItems = false) {
         card.addEventListener('click', () => showItemDetail(item, isUserItems));
         container.appendChild(card);
     });
+}
+
+// Display Resolved Items with Resolver Information
+function displayResolvedItems(items) {
+    const container = document.getElementById('resolvedItemsList');
+    container.innerHTML = '';
+
+    if (items.length === 0) {
+        container.innerHTML = '<p class="col-span-full text-center text-gray-600 py-8">No resolved items yet</p>';
+        return;
+    }
+
+    items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'bg-white rounded-lg shadow-md hover:shadow-lg transition overflow-hidden cursor-pointer';
+        const resolvedDate = item.resolved_at ? new Date(item.resolved_at).toLocaleDateString() : 'Unknown';
+        const resolverName = item.resolved_by_name || 'Unknown';
+        const claimerName = item.claim_user_name || 'Unknown';
+        
+        card.innerHTML = `
+            <div class="bg-gradient-to-r from-green-400 to-green-600 h-32 flex items-center justify-center">
+                <i class="fas fa-check-circle text-white text-4xl"></i>
+            </div>
+            <div class="p-4">
+                <div class="flex justify-between items-start mb-2">
+                    <h3 class="font-bold text-lg text-gray-800">${item.title}</h3>
+                    <span class="text-xs font-semibold bg-green-100 text-green-800 px-2 py-1 rounded">
+                        RESOLVED
+                    </span>
+                </div>
+                <p class="text-sm text-gray-600 mb-2 line-clamp-2">${item.description || 'No description'}</p>
+                <p class="text-sm text-gray-500"><i class="fas fa-map-marker-alt mr-1"></i>${item.location || 'Location not specified'}</p>
+                <div class="mt-3 pt-3 border-t">
+                    <p class="text-xs text-blue-600 font-semibold"><i class="fas fa-user-check mr-1"></i>Resolved by: ${resolverName}</p>
+                    <p class="text-xs text-purple-600 font-semibold"><i class="fas fa-user-tie mr-1"></i>Item found by: ${claimerName}</p>
+                    <p class="text-xs text-gray-400 mt-1"><i class="fas fa-calendar mr-1"></i>Resolved on: ${resolvedDate}</p>
+                </div>
+            </div>
+        `;
+        card.addEventListener('click', () => showResolvedItemDetail(item));
+        container.appendChild(card);
+    });
+}
+
+// Show Resolved Item Detail with Full Information
+function showResolvedItemDetail(item) {
+    const modal = document.getElementById('itemModal');
+    document.getElementById('modalTitle').textContent = item.title;
+    
+    const statusBadgeClass = {
+        'active': 'bg-blue-100 text-blue-800',
+        'resolved': 'bg-green-100 text-green-800',
+        'claimed': 'bg-purple-100 text-purple-800',
+        'found': 'bg-orange-100 text-orange-800'
+    };
+
+    const resolvedDate = item.resolved_at ? new Date(item.resolved_at).toLocaleDateString() : 'Unknown';
+    
+    document.getElementById('modalContent').innerHTML = `
+        <div class="space-y-3">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-sm text-gray-600">Type</p>
+                    <p class="font-semibold text-gray-800 capitalize">${item.item_type}</p>
+                </div>
+                <span class="text-xs font-semibold ${statusBadgeClass[item.status] || 'bg-gray-100 text-gray-800'} px-3 py-1 rounded">
+                    ${item.status.toUpperCase()}
+                </span>
+            </div>
+            ${item.category ? `<div><p class="text-sm text-gray-600">Category</p><p class="font-semibold text-gray-800">${item.category}</p></div>` : ''}
+            <div><p class="text-sm text-gray-600">Description</p><p class="font-semibold text-gray-800">${item.description || 'N/A'}</p></div>
+            ${item.location ? `<div><p class="text-sm text-gray-600">Item Location</p><p class="font-semibold text-gray-800">${item.location}</p></div>` : ''}
+            ${item.item_date ? `<div><p class="text-sm text-gray-600">Date</p><p class="font-semibold text-gray-800">${new Date(item.item_date).toLocaleDateString()}</p></div>` : ''}
+            <hr class="my-4">
+            <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+                <h4 class="font-bold text-green-800 mb-3"><i class="fas fa-check-circle mr-2"></i>Resolution Details</h4>
+                <div class="space-y-2">
+                    <div><p class="text-sm text-gray-600">Resolved by</p><p class="font-semibold text-gray-800">${item.resolved_by_name || 'Unknown'} (${item.resolved_by_email || 'N/A'})</p></div>
+                    <div><p class="text-sm text-gray-600">Item found by</p><p class="font-semibold text-gray-800">${item.claim_user_name || 'Unknown'} (${item.claim_user_email || 'N/A'})</p></div>
+                    <div><p class="text-sm text-gray-600">Resolved on</p><p class="font-semibold text-gray-800">${resolvedDate}</p></div>
+                </div>
+            </div>
+            ${item.claim_location ? `<div><p class="text-sm text-gray-600">Item Found At</p><p class="font-semibold text-gray-800">${item.claim_location}</p></div>` : ''}
+            ${item.claim_description ? `<div><p class="text-sm text-gray-600">Finder's Description</p><p class="font-semibold text-gray-800">${item.claim_description}</p></div>` : ''}
+            ${item.claim_contact_email ? `<div><p class="text-sm text-gray-600">Finder's Email</p><p class="font-semibold text-gray-800">${item.claim_contact_email}</p></div>` : ''}
+            ${item.claim_contact_phone ? `<div><p class="text-sm text-gray-600">Finder's Phone</p><p class="font-semibold text-gray-800">${item.claim_contact_phone}</p></div>` : ''}
+        </div>
+    `;
+
+    // Hide all buttons for resolved items view
+    document.getElementById('editItemBtn').classList.add('hidden');
+    document.getElementById('deleteItemBtn').classList.add('hidden');
+    document.getElementById('markFoundBtn').classList.add('hidden');
+    document.getElementById('markClaimedBtn').classList.add('hidden');
+    document.getElementById('viewClaimsBtn').classList.add('hidden');
+    document.getElementById('contactUserBtn').classList.add('hidden');
+    document.getElementById('claimFoundBtn').classList.add('hidden');
+
+    modal.classList.remove('hidden');
 }
 
 // Show Item Detail

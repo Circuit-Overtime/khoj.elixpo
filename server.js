@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json());
 app.use(cors({
-    origin: ["http://localhost:6000", "http://51.15.192.6:6000"],
+    origin: ["http://localhost:3000", "http://127.0.0.1:5500"],
     credentials: true
 }));
 
@@ -211,21 +211,26 @@ app.post("/api/auth/reset-password", async (req, res) => {
 app.get("/api/items", async (req, res) => {
   try {
     const { type, status, search } = req.query;
-    let query = "SELECT * FROM items WHERE 1=1";
+    let query = `SELECT i.*, u.name as resolved_by_name, u.email as resolved_by_email, fc.claimed_by_user_id, fc.description as claim_description, fc.location as claim_location, fc.contact_email as claim_contact_email, fc.contact_phone as claim_contact_phone, cu.name as claim_user_name, cu.email as claim_user_email
+                 FROM items i
+                 LEFT JOIN users u ON i.resolved_by_user_id = u.id
+                 LEFT JOIN found_claims fc ON i.accepted_claim_id = fc.id
+                 LEFT JOIN users cu ON fc.claimed_by_user_id = cu.id
+                 WHERE 1=1`;
     let params = [];
     if (type) {
-      query += " AND item_type = ?";
+      query += " AND i.item_type = ?";
       params.push(type);
     }
     if (status) {
-      query += " AND status = ?";
+      query += " AND i.status = ?";
       params.push(status);
     }
     if (search) {
-      query += " AND (title LIKE ? OR description LIKE ?)";
+      query += " AND (i.title LIKE ? OR i.description LIKE ?)";
       params.push(`%${search}%`, `%${search}%`);
     }
-    query += " ORDER BY created_at DESC";
+    query += " ORDER BY i.created_at DESC";
     const [items] = await db.query(query, params);
     res.json(items);
   } catch (error) {
@@ -235,9 +240,15 @@ app.get("/api/items", async (req, res) => {
 });
 app.get("/api/items/user", verifyToken, async (req, res) => {
   try {
-    const [items] = await db.query("SELECT * FROM items WHERE user_id = ? ORDER BY created_at DESC", [
-      req.userId,
-    ]);
+    const [items] = await db.query(
+      `SELECT i.*, u.name as resolved_by_name, u.email as resolved_by_email, fc.claimed_by_user_id, fc.description as claim_description, fc.location as claim_location, fc.contact_email as claim_contact_email, fc.contact_phone as claim_contact_phone, cu.name as claim_user_name, cu.email as claim_user_email
+       FROM items i
+       LEFT JOIN users u ON i.resolved_by_user_id = u.id
+       LEFT JOIN found_claims fc ON i.accepted_claim_id = fc.id
+       LEFT JOIN users cu ON fc.claimed_by_user_id = cu.id
+       WHERE i.user_id = ? ORDER BY i.created_at DESC`,
+      [req.userId]
+    );
     res.json(items);
   } catch (error) {
     console.error("Get user items error:", error);
@@ -246,7 +257,15 @@ app.get("/api/items/user", verifyToken, async (req, res) => {
 });
 app.get("/api/items/:id", async (req, res) => {
   try {
-    const [items] = await db.query("SELECT * FROM items WHERE id = ?", [req.params.id]);
+    const [items] = await db.query(
+      `SELECT i.*, u.name as resolved_by_name, u.email as resolved_by_email, fc.claimed_by_user_id, fc.description as claim_description, fc.location as claim_location, fc.contact_email as claim_contact_email, fc.contact_phone as claim_contact_phone, cu.name as claim_user_name, cu.email as claim_user_email
+       FROM items i
+       LEFT JOIN users u ON i.resolved_by_user_id = u.id
+       LEFT JOIN found_claims fc ON i.accepted_claim_id = fc.id
+       LEFT JOIN users cu ON fc.claimed_by_user_id = cu.id
+       WHERE i.id = ?`,
+      [req.params.id]
+    );
     if (items.length === 0) {
       return res.status(404).json({ message: "Item not found" });
     }
@@ -497,8 +516,11 @@ app.put("/api/found-claims/:claimId/accept", verifyToken, async (req, res) => {
     // Update claim status
     await db.query("UPDATE found_claims SET status = 'accepted' WHERE id = ?", [claimId]);
     
-    // Update item status to resolved
-    await db.query("UPDATE items SET status = 'resolved' WHERE id = ?", [claims[0].original_item_id]);
+    // Update item status to resolved with resolver info
+    await db.query(
+      "UPDATE items SET status = 'resolved', resolved_by_user_id = ?, accepted_claim_id = ?, resolved_at = NOW() WHERE id = ?",
+      [req.userId, claimId, claims[0].original_item_id]
+    );
     
     res.json({ message: "Claim accepted and 10 points awarded" });
   } catch (error) {
@@ -568,8 +590,12 @@ app.get("/api/debug", (req, res) => {
 // THEN serve static files (this must be AFTER all API routes)
 app.use(express.static(__dirname));
 
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
 
-app.listen(6000, "0.0.0.0", () => {
-  console.log("✓ API running on port 6000");
-  console.log("✓ Access at http://localhost:6000");
+
+app.listen(3000, "0.0.0.0", () => {
+  console.log("✓ API running on port 3000");
+  console.log("✓ Access at http://localhost:3000");
 });
