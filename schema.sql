@@ -37,15 +37,17 @@ CREATE TABLE IF NOT EXISTS items (
   image_url VARCHAR(255),
   contact_email VARCHAR(255),
   contact_phone VARCHAR(20),
-  resolved_by_user_id INT,
-  accepted_claim_id INT,
-  resolved_at TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (resolved_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
-  FOREIGN KEY (accepted_claim_id) REFERENCES found_claims(id) ON DELETE SET NULL
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- Add new columns for resolved items tracking
+ALTER TABLE items ADD COLUMN IF NOT EXISTS resolved_by_user_id INT;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS accepted_claim_id INT;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP NULL;
+ALTER TABLE items ADD FOREIGN KEY IF NOT EXISTS (resolved_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE items ADD FOREIGN KEY IF NOT EXISTS (accepted_claim_id) REFERENCES found_claims(id) ON DELETE SET NULL;
 
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_items_user_id ON items(user_id);
