@@ -198,6 +198,9 @@
                     <button class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-600 hover:text-blue-600 font-semibold" data-tab="add-item">
                         <i class="fas fa-plus mr-2"></i>Add Item
                     </button>
+                    <button class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-600 hover:text-blue-600 font-semibold" data-tab="settings">
+                        <i class="fas fa-cog mr-2"></i>Settings
+                    </button>
                 </div>
             </div>
         </div>
@@ -308,6 +311,67 @@
                     </button>
                 </form>
                 <div id="addItemMessage" class="mt-6 p-3 rounded-lg hidden"></div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="settings-tab" class="tab-content hidden max-w-7xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-lg shadow-md p-8 max-w-2xl">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Notification Settings</h2>
+                <p class="text-gray-600 mb-6">Manage your email notification preferences for the Lost & Found system</p>
+                
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-gray-800 flex items-center">
+                                <i class="fas fa-search text-red-500 mr-3"></i>Lost Item Notifications
+                            </h3>
+                            <p class="text-sm text-gray-600 mt-1">Receive email notifications when someone posts a lost item</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="notifyLostItems" class="sr-only peer" checked>
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-gray-800 flex items-center">
+                                <i class="fas fa-box text-green-500 mr-3"></i>Found Item Notifications
+                            </h3>
+                            <p class="text-sm text-gray-600 mt-1">Receive email notifications when someone posts a found item</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="notifyFoundItems" class="sr-only peer" checked>
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-gray-800 flex items-center">
+                                <i class="fas fa-bell text-yellow-500 mr-3"></i>Claim Notifications
+                            </h3>
+                            <p class="text-sm text-gray-600 mt-1">Receive email notifications when someone claims your posted item</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="notifyClaims" class="sr-only peer" checked>
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h3 class="font-semibold text-blue-900 flex items-center mb-2">
+                        <i class="fas fa-info-circle mr-2"></i>How it works
+                    </h3>
+                    <ul class="text-sm text-blue-800 space-y-1">
+                        <li>✓ When you enable notifications, emails are sent to all registered users with notifications enabled</li>
+                        <li>✓ Lost item posts are sent to users with "Lost Item Notifications" enabled</li>
+                        <li>✓ Found item posts are sent to users with "Found Item Notifications" enabled</li>
+                        <li>✓ Changes are saved automatically when you toggle the switches</li>
+                    </ul>
+                </div>
             </div>
         </div>
     </div>

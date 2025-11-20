@@ -82,3 +82,15 @@ ALTER TABLE users MODIFY COLUMN login_type ENUM('email', 'google') DEFAULT 'emai
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_login_type ON users(login_type);
+
+CREATE TABLE IF NOT EXISTS user_notification_preferences (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL UNIQUE,
+  lost_item_notifications BOOLEAN DEFAULT TRUE,
+  found_item_notifications BOOLEAN DEFAULT TRUE,
+  claim_notifications BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_user_id (user_id)
+);

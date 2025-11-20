@@ -74,6 +74,56 @@ const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+const sendNotificationEmails = async (item, currentUserId) => {
+  try {
+    // Get all users with lost item notifications enabled
+    const [users] = await db.query(
+      `SELECT u.id, u.email, u.name FROM users u
+       LEFT JOIN user_notification_preferences unp ON u.id = unp.user_id
+       WHERE u.id != ? AND (unp.lost_item_notifications = TRUE OR unp.id IS NULL)
+       AND u.email IS NOT NULL`,
+      [currentUserId]
+    );
+
+    if (users.length === 0) return;
+
+    const itemTypeLabel = item.item_type === 'lost' ? 'Lost' : 'Found';
+    const emailTemplate = `
+      <div style="font-family: Arial, sans-serif; color: #333;">
+        <h2 style="color: #007bff;">New ${itemTypeLabel} Item Posted!</h2>
+        <p>Hello USER_NAME,</p>
+        <p>A new <strong>${itemTypeLabel}</strong> item has been posted on the Lost & Found system:</p>
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+          <p><strong>Title:</strong> ${item.title}</p>
+          <p><strong>Type:</strong> ${item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}</p>
+          ${item.category ? `<p><strong>Category:</strong> ${item.category}</p>` : ''}
+          <p><strong>Description:</strong> ${item.description || 'N/A'}</p>
+          ${item.location ? `<p><strong>Location:</strong> ${item.location}</p>` : ''}
+          ${item.item_date ? `<p><strong>Date:</strong> ${new Date(item.item_date).toLocaleDateString()}</p>` : ''}
+        </div>
+        <p style="color: #666; font-size: 14px;">If you find this item or have any information, please log in to the Lost & Found system and claim it.</p>
+        <p style="color: #999; font-size: 12px; margin-top: 20px;">You received this email because you have lost item notifications enabled. You can manage your notification preferences in your account settings.</p>
+      </div>
+    `;
+
+    // Send emails to all users (batch)
+    for (const user of users) {
+      await transporter.sendMail({
+        from: mail_user,
+        to: user.email,
+        subject: `New ${itemTypeLabel} Item Posted: ${item.title}`,
+        html: emailTemplate.replace('USER_NAME', user.name),
+      }).catch(err => {
+        console.error(`Failed to send email to ${user.email}:`, err.message);
+      });
+    }
+
+    console.log(`✓ Sent ${item.item_type} item notification to ${users.length} users`);
+  } catch (error) {
+    console.error('Error sending notification emails:', error);
+  }
+};
+
 const serviceAccountPath = path.join(__dirname, "service.json");
 if (fs.existsSync(serviceAccountPath)) {
   const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
@@ -521,7 +571,7 @@ app.post("/api/items", verifyToken, async (req, res) => {
   if (!title || !item_type) {
     return res.status(400).json({ message: "Title and type are required" });
   }
-  await db.query(
+  const result = await db.query(
     "INSERT INTO items (user_id, title, description, item_type, category, location, item_date, contact_email, contact_phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
     req.userId,
@@ -535,6 +585,19 @@ app.post("/api/items", verifyToken, async (req, res) => {
     contact_phone,
     ]
   );
+  
+  // Send notifications to users with notifications enabled
+  const newItem = {
+    title,
+    description,
+    item_type,
+    category,
+    location,
+    item_date
+  };
+  
+  sendNotificationEmails(newItem, req.userId);
+  
   res.status(201).json({ message: "Item added successfully" });
   } catch (error) {
   console.error("Add item error:", error);
@@ -796,6 +859,64 @@ app.get("/api/users/points", verifyToken, async (req, res) => {
   } catch (error) {
   console.error("Get points error:", error);
   res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.get("/api/notifications/preferences", verifyToken, async (req, res) => {
+  try {
+    const [prefs] = await db.query(
+      "SELECT lost_item_notifications, found_item_notifications, claim_notifications FROM user_notification_preferences WHERE user_id = ?",
+      [req.userId]
+    );
+    
+    if (prefs.length === 0) {
+      // Return default preferences if none exist
+      return res.json({
+        lost_item_notifications: true,
+        found_item_notifications: true,
+        claim_notifications: true
+      });
+    }
+    
+    res.json(prefs[0]);
+  } catch (error) {
+    console.error("Get notification preferences error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.post("/api/notifications/preferences", verifyToken, async (req, res) => {
+  try {
+    const {
+      lost_item_notifications,
+      found_item_notifications,
+      claim_notifications
+    } = req.body;
+    
+    // Check if preferences exist
+    const [existing] = await db.query(
+      "SELECT id FROM user_notification_preferences WHERE user_id = ?",
+      [req.userId]
+    );
+    
+    if (existing.length > 0) {
+      // Update existing preferences
+      await db.query(
+        "UPDATE user_notification_preferences SET lost_item_notifications = ?, found_item_notifications = ?, claim_notifications = ? WHERE user_id = ?",
+        [lost_item_notifications, found_item_notifications, claim_notifications, req.userId]
+      );
+    } else {
+      // Create new preferences
+      await db.query(
+        "INSERT INTO user_notification_preferences (user_id, lost_item_notifications, found_item_notifications, claim_notifications) VALUES (?, ?, ?, ?)",
+        [req.userId, lost_item_notifications, found_item_notifications, claim_notifications]
+      );
+    }
+    
+    res.json({ message: "Notification preferences updated successfully" });
+  } catch (error) {
+    console.error("Update notification preferences error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 

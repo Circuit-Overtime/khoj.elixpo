@@ -5,6 +5,7 @@ let currentEditingItem = null;
 let otpTimerInterval = null;
 let currentOtpEmail = '';
 let currentOtpIsSignup = false;
+let notificationPreferences = {};
 
 const loginPage = document.getElementById('loginPage');
 const dashboardPage = document.getElementById('dashboardPage');
@@ -107,6 +108,7 @@ function showDashboard() {
     document.getElementById('pointsContainer').classList.remove('hidden');
     loadBrowseItems();
     loadUserPoints();
+    loadNotificationPreferences();
 }
 
 function hideDashboard() {
@@ -1115,3 +1117,79 @@ document.querySelectorAll('.tab-btn')?.forEach(btn => {
         if (tabName === 'resolved-items') loadResolvedItems();
     });
 });
+
+async function loadNotificationPreferences() {
+    try {
+        const response = await fetch(`${API_BASE}/notifications/preferences`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        
+        if (response.ok) {
+            notificationPreferences = await response.json();
+            updateNotificationPreferencesUI();
+        }
+    } catch (error) {
+        console.error('Error loading notification preferences:', error);
+    }
+}
+
+function updateNotificationPreferencesUI() {
+    const lostItemCheckbox = document.getElementById('notifyLostItems');
+    const foundItemCheckbox = document.getElementById('notifyFoundItems');
+    const claimCheckbox = document.getElementById('notifyClaims');
+    
+    if (lostItemCheckbox) {
+        lostItemCheckbox.checked = notificationPreferences.lost_item_notifications !== false;
+    }
+    if (foundItemCheckbox) {
+        foundItemCheckbox.checked = notificationPreferences.found_item_notifications !== false;
+    }
+    if (claimCheckbox) {
+        claimCheckbox.checked = notificationPreferences.claim_notifications !== false;
+    }
+}
+
+async function saveNotificationPreferences() {
+    try {
+        const lostItemCheckbox = document.getElementById('notifyLostItems');
+        const foundItemCheckbox = document.getElementById('notifyFoundItems');
+        const claimCheckbox = document.getElementById('notifyClaims');
+        
+        const preferences = {
+            lost_item_notifications: lostItemCheckbox?.checked ?? true,
+            found_item_notifications: foundItemCheckbox?.checked ?? true,
+            claim_notifications: claimCheckbox?.checked ?? true
+        };
+        
+        const response = await fetch(`${API_BASE}/notifications/preferences`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${currentToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(preferences)
+        });
+        
+        if (response.ok) {
+            notificationPreferences = preferences;
+            showToast('Notification preferences updated successfully', false);
+        } else {
+            showToast('Failed to update notification preferences', true);
+        }
+    } catch (error) {
+        console.error('Error saving notification preferences:', error);
+        showToast('Error saving preferences', true);
+    }
+}
+
+// Add event listeners for notification toggles
+document.addEventListener('DOMContentLoaded', () => {
+    const lostItemCheckbox = document.getElementById('notifyLostItems');
+    const foundItemCheckbox = document.getElementById('notifyFoundItems');
+    const claimCheckbox = document.getElementById('notifyClaims');
+    
+    if (lostItemCheckbox) lostItemCheckbox.addEventListener('change', saveNotificationPreferences);
+    if (foundItemCheckbox) foundItemCheckbox.addEventListener('change', saveNotificationPreferences);
+    if (claimCheckbox) claimCheckbox.addEventListener('change', saveNotificationPreferences);
+});
+
